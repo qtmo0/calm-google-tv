@@ -227,3 +227,13 @@ dann weg).
 Startbildschirm basiert auf [tv-detox](https://github.com/Ansub/tv-detox) von Ansub Khan (MIT-Lizenz,
 siehe `source/homescreen/LICENSE`). Eigene Änderungen: Tageszeit-Hintergrund mit Dithering, Begrüßung,
 Symbolleiste statt unterer Reihe, Tailscale-Status, Fokusrahmen, Home/Zurück zur ersten App.
+
+## Komplett mit KI gemacht
+
+Ehrlicher Hinweis: **Alles in diesem Projekt ist mit KI entstanden** – der Code aller drei Apps, die
+Skripte, die Mockups und auch dieser Text. Geschrieben hat es [Claude Code](https://claude.com/claude-code)
+im Gespräch mit mir. Ich habe selbst keine Ahnung von App-Entwicklung: Ich habe beschrieben, was ich will,
+Entwürfe ausgesucht und am Fernseher getestet, ob es gefällt.
+
+Getestet ist das Ganze nur auf meinem eigenen Gerät (Google TV Streamer an einem LG-OLED). Nutzung auf
+eigene Verantwortung – und wenn etwas nicht klappt, frag am besten auch eine KI. 🙂
