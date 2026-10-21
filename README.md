@@ -1,0 +1,229 @@
+# Calm Google TV
+
+Ein aufgeräumter, schneller Google TV: ohne Werbung, mit ruhigem eigenem Startbildschirm, einem
+Glühwürmchen-Bildschirmschoner für OLED und sinnvoll belegten Fernbedienungstasten.
+Einrichten geht am einfachsten mit [Claude Code](https://claude.com/claude-code) (fragt vor jeder Änderung)
+oder mit einem Skript – und alles lässt sich wieder rückgängig machen. Nichts wird gelöscht.
+
+> **Hinweis:** Das ist ein privates Bastelprojekt, kein offizielles Produkt. Es hat auf meinem TV gut
+> funktioniert; die Nutzung erfolgt auf eigene Verantwortung.
+
+Entwickelt und getestet auf einem **Google TV Streamer (Android 14)** an einem **LG-OLED (4K)**.
+Auf anderen Google-TV-Geräten sollte das meiste genauso funktionieren (siehe „Andere Geräte“).
+
+## Was drin ist
+
+| Teil | Was es macht |
+|---|---|
+| **Aufräumen** | Schaltet Werbung, Empfehlungen, Play Filme und den Google-Bildschirmschoner aus. Nur *ausschalten*, nichts wird gelöscht. Animationen aus. |
+| **Startbildschirm** | Begrüßung, Datum, große Uhr. Eine Reihe App-Kacheln. Oben rechts kleine Symbole (Tailscale-VPN mit Statuspunkt, WLAN, Play Store, Einstellungen, App hinzufügen). Hintergrund-Farbverlauf nach Tageszeit, ohne Farbstufen. Home/Zurück springt zur ersten App. Basiert auf [tv-detox](https://github.com/Ansub/tv-detox) (MIT), stark angepasst. |
+| **Bildschirmschoner „Glühwürmchen“** | 7 weiche Lichter schweben langsam in der Bildmitte. 5–17 Uhr bunt, 17–5 Uhr warm. OpenGL-Shader in echtem 4K, 30 Bilder/s, ~6–9 % eines CPU-Kerns. Nichts berührt den Rand (gut mit Hue-Ambilight). |
+| **Fernbedienungs-Tasten** | YouTube-Taste öffnet YouTube, Netflix-Taste öffnet Wholphin. Kleine Helfer-App als Bedienungshilfe, ohne Internetzugriff. |
+| **Zeiten** | Bildschirmschoner nach 3 Min., Ruhezustand nach 30 Min. ohne Tastendruck. |
+
+Ergebnis auf meinem TV: freier Speicher von ~1,55 GB auf ~2,06 GB, Startbildschirm ~63 MB statt
+über 230 MB (Google TV).
+
+## Ordner
+
+```
+CLAUDE.md           Anleitung für Claude Code (wird automatisch gelesen): Ablauf, Regeln, Eigenheiten
+tvctl.sh            Einzelne Schritte ohne Rückfragen (für Claude Code und setup.sh), protokolliert alles
+setup.sh            Geführte Einrichtung im Terminal, fragt vor jedem Schritt
+undo.sh             Macht alles rückgängig und startet neu
+build-all.sh        Baut die drei Apps neu (nur wenn du Code änderst)
+apk/                Fertig gebaute Apps – zum Einrichten reicht adb
+source/homescreen/  Startbildschirm (aus tv-detox weiterentwickelt), Java, ohne Gradle
+source/screensaver/ Bildschirmschoner „Glühwürmchen“ (OpenGL ES 2.0 DreamService)
+source/remote-keys/ Fernbedienungs-Tasten (AccessibilityService)
+mockups/            HTML-Entwürfe: Startbildschirm, Bildschirmschoner (gleicher Shader wie auf dem TV)
+tvs/<IP>/           Pro TV: backup.txt (Ausgangszustand) und changes.md (jede Änderung + Rückgängig)
+```
+
+Jeder TV bekommt seinen eigenen Ordner unter `tvs/`, benannt nach seiner IP (`192-168-1-50`).
+Diese Ordner bleiben lokal bei dir (per `.gitignore` ausgeschlossen, weil sie IP-Adressen enthalten).
+Nicht löschen – ohne `backup.txt` kann `undo` nicht wissen, wie es vorher war.
+
+## Einrichten
+
+### 1. Am Mac: adb installieren (einmalig)
+
+```sh
+brew install android-platform-tools
+```
+
+Windows: [SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools) entpacken und
+die Skripte in Git Bash ausführen.
+
+### 2. Am Fernseher: Entwicklermodus (einmalig, ~2 Min.)
+
+1. **Einstellungen → System → Info** → 7× auf **Android TV OS-Build** drücken („Sie sind jetzt Entwickler“).
+2. **Einstellungen → System → Entwickleroptionen** → **USB-Debugging** einschalten.
+3. IP-Adresse: **Einstellungen → Netzwerk & Internet** → dein WLAN.
+4. Beim ersten Verbinden fragt der TV „USB-Debugging zulassen?“ → *Immer zulassen* → **Zulassen**.
+
+Mac und TV müssen im selben Netz sein.
+
+### 3a. Mit Claude Code (empfohlen)
+
+Claude Code in diesem Ordner öffnen und schreiben:
+
+```text
+Richte meinen Google TV mit der IP <IP> ein, wie in CLAUDE.md beschrieben.
+Meine Apps für den Startbildschirm, in dieser Reihenfolge: <Apps>.
+```
+
+Claude liest `CLAUDE.md`, verbindet sich, zeigt dir alle Apps und den Speicher, fragt vor jeder Änderung
+und protokolliert alles in `tvs/<IP>/`. Weitere Prompts: siehe unten.
+
+### 3b. Ohne Claude: Skript im Terminal
+
+```sh
+sh setup.sh 192.168.1.50
+```
+
+Eigene Apps und Reihenfolge für den Startbildschirm (Paketnamen, kommagetrennt):
+
+```sh
+sh setup.sh 192.168.1.50 "com.github.damontecres.wholphin,com.google.android.youtube.tv,com.zattoo.player"
+```
+
+Das Skript sichert zuerst den Ausgangszustand in `tvs/<IP>/backup.txt` (nicht löschen!) und fragt dann:
+
+1. Google-Extras ausschalten – einzeln pro App
+2. Startbildschirm installieren – fragt zusätzlich, ob der Google-TV-Startbildschirm aus darf, und
+   **gesondert**, ob die Google-Einrichtungs-App aus darf, falls sie Home übernimmt (siehe unten)
+3. Bildschirmschoner installieren
+4. Zeiten (3 / 30 Min.) und 5. Animationen
+6. Fernbedienungs-Tasten
+7. 30 s warten, Neustart, Kontrolle, freier Speicher vorher/nachher
+
+Einzelne Schritte gehen auch direkt, z. B. `sh tvctl.sh times 192.168.1.50 5 45` oder
+`sh tvctl.sh info 192.168.1.50` (alle Befehle: `sh tvctl.sh`).
+
+Tailscale wird nie als Kachel gezeigt, sondern immer als Schild oben rechts, wenn es installiert ist.
+
+### Rückgängig
+
+```sh
+sh undo.sh 192.168.1.50
+```
+
+Schaltet alles wieder ein, was nach der Sicherung ausgeschaltet wurde, entfernt die drei eigenen Apps,
+stellt die gesicherten Einstellungen her und startet neu.
+
+## Ausführlicher Prompt für Claude Code
+
+Falls du jede Regel ausdrücklich mitgeben willst (steht so auch in `CLAUDE.md`):
+
+```text
+In diesem Ordner liegt mein Google-TV-Setup (CLAUDE.md und README.md lesen). Richte damit
+meinen Google TV ein. Er hat die IP <IP>.
+
+1. Verbinde dich per adb über WLAN. Führe mich durch alles, was ich am TV drücken muss.
+2. Bevor du etwas änderst: liste alle Apps in einfachen Worten auf (kann aus / braucht
+   der TV / nutze ich) und zeig mir den freien Speicher.
+3. Frag mich vor jeder Änderung. Apps nur ausschalten, nie löschen. Führe eine Liste,
+   was du geändert hast und wie man es rückgängig macht.
+4. Nie ausschalten: Google Play-Dienste, Play Store, Einstellungen, System UI,
+   Einrichtungs-Apps, Tastatur, Bluetooth, HDMI/CEC, das TV-Eingangs-Framework oder
+   sonst etwas, das der TV zum Starten braucht. Im Zweifel anlassen. Einzige Ausnahme:
+   Wenn install.sh anbietet, die Google-TV-Einrichtungs-App auszuschalten, weil sie
+   Home übernimmt, frag mich vorher.
+5. Nutze tvctl.sh und die Apps aus apk/. Meine Apps für den Startbildschirm: <Apps>.
+6. Warte nach der letzten Änderung 30 Sekunden, starte den TV einmal neu und prüfe,
+   dass er normal startet. Zeig mir den freien Speicher vorher und nachher.
+```
+
+## Weiterentwickeln (Prompts für einen normalen Claude-Chat)
+
+**Bildschirmschoner optisch verbessern:** `mockups/bildschirmschoner-gluehwuermchen.html` anhängen und
+schreiben:
+
+```text
+Das ist mein TV-Bildschirmschoner als HTML/WebGL-Nachbau (Kontext steht oben im Kommentar).
+Die Shader sind identisch mit dem TV. Mach mir Vorschläge, wie er schöner wird, und halte
+dich an die Regeln im Kommentar (OpenGL ES 2.0, 4K, 30 fps, schwacher Grafikchip, nur
+kleine Flächen pro Bild zeichnen, echtes Schwarz bleibt schwarz, nichts am Rand, ruhig).
+```
+
+**Startbildschirm-Ideen:** `mockups/startbildschirm.html` anhängen und schreiben:
+
+```text
+Das ist der Startbildschirm meines Google TV als Mockup (Maße im Kommentar oben, Raster
+1920x1080). Mach Vorschläge, wie er schöner oder praktischer wird, ohne Leistung zu kosten:
+keine bewegten Hintergründe, keine Videos, kein Blur, keine Empfehlungen aus Apps, möglichst
+keine Internetabfragen. Dunkel und ruhig, passend zu einem OLED.
+```
+
+Ergebnisse dann mit Claude Code hier im Ordner umsetzen, `sh build-all.sh`, und die geänderte App mit
+`adb install -r apk/<name>.apk` aufspielen (Einstellungen bleiben dabei erhalten).
+
+## Anpassen ohne Programmieren
+
+| Was | Wo |
+|---|---|
+| Apps auf dem Startbildschirm | Am TV: OK lange drücken → Verschieben / Ersetzen / Entfernen, oder „App hinzufügen“ |
+| Zeiten | `adb shell settings put system screen_off_timeout <ms>` (Bildschirmschoner), `adb shell settings put secure sleep_timeout <ms>` (Ruhezustand) |
+| Ringe im dunklen Schein | Am LG: Einstellungen → Bild → Erweiterte Einstellungen → Bildoptionen → **Glatte Abstufung: Niedrig** |
+
+## Im Code anpassen
+
+| Was | Datei |
+|---|---|
+| Tageszeit-Farben, Begrüßung, Zeitgrenzen | `source/homescreen/src/com/ansub/tvhome/MainActivity.java` → `PHASE_COLORS`, `GREETINGS`, `phaseNow()` |
+| Symbole oben rechts, Tailscale | dieselbe Datei → `buildTiles()`, `TAILSCALE` |
+| Glühwürmchen: Anzahl, Tempo, Abstand, Farben, Shader | `source/screensaver/src/io/github/qtmo0/calmtv/screensaver/OledDream.java` → Konstanten oben, `FRAGMENT` |
+| Tastenbelegung | `source/remote-keys/src/io/github/qtmo0/calmtv/remotekeys/TastenService.java` → `targetFor()` |
+
+Bauen braucht Java 17 und das Android SDK (siehe `build-all.sh`). Kein Gradle, keine Bibliotheken.
+
+## Signier-Schlüssel
+
+Jede App ist mit einem eigenen Schlüssel signiert (`source/*/key.jks`, wird beim ersten Bauen erzeugt).
+Ein **Update** einer App, die schon auf einem TV läuft, geht nur mit **demselben** Schlüssel. Mit einem neuen
+Schlüssel muss die App erst deinstalliert werden (Einstellungen der App, z. B. die Kachel-Reihenfolge, sind
+dann weg).
+
+- Die fertigen Apps in `apk/` sind mit den Schlüsseln des Autors signiert. Die Schlüssel selbst sind
+  **nicht** im Repo (`.gitignore`).
+- **Nur einrichten** (`apk/` aufspielen): Du brauchst keine Schlüssel.
+- **Selbst bauen:** `build.sh` erzeugt beim ersten Mal eigene Schlüssel. Auf einem TV, auf dem schon die
+  Apps aus `apk/` laufen, musst du die jeweilige App dann einmal deinstallieren
+  (`adb uninstall <paket>`), bevor deine Version drauf darf. Danach bleibt es bei deinem Schlüssel –
+  bewahre `source/*/key.jks` gut auf.
+
+## Gut zu wissen (Erfahrungen)
+
+- **„No route to host“ beim Verbinden**, obwohl der TV per `ping` erreichbar ist: adb auf dem Mac hängt.
+  `adb kill-server && adb start-server`, dann neu verbinden. `setup.sh` macht das automatisch.
+- **Bildschirmschoner startet zum Testen nicht:** Android 14 hat eine „Undim“-Sperre, die den Bildschirm
+  ~10 Min. wach hält, wenn er kurz hintereinander zweimal aus dem Dimmen geweckt wurde (passiert v. a., wenn
+  man Apps aktualisiert, während der Schoner läuft). Streamer kurz aus- und einschalten löst sie.
+- **Einrichtungs-App:** Auf dem Streamer übernimmt nach dem Ausschalten des Google-TV-Startbildschirms die
+  Einrichtungs-App (`com.google.android.tungsten.setupwraith`) die Home-Taste. `install.sh` erkennt das und
+  bietet an, sie auch auszuschalten – auf meinem TV problemlos. **Vor einem Werksreset oder wenn der TV nach
+  Einrichtung fragt, zuerst wieder einschalten:**
+  `adb shell pm enable com.google.android.tungsten.setupwraith`
+- **YouTube-Taste** geht ohne die Fernbedienungs-Helfer-App nicht mehr, weil sie an den Google-TV-
+  Startbildschirm gebunden ist.
+- **Grafikchip:** schwach. Vollbild-Effekte mit Schleifen über viele Objekte ruckeln (4 fps in 4K). Effekte
+  nur auf kleinen Flächen zeichnen. Dunkle Verläufe auf OLED brauchen Dithering, sonst Farbstufen; das
+  Dithering-Flag von Android greift beim GPU-Zeichnen nicht – darum rechnen Startbildschirm und Schoner es
+  selbst.
+- **Auflösung:** Google TV zeichnet die Oberfläche in 1080p und skaliert auf 4K. Der Bildschirmschoner
+  umgeht das per OpenGL-Surface in voller Panel-Auflösung.
+
+## Andere Geräte
+
+- **Chromecast mit Google TV / andere Google TVs:** Aufräumen, Startbildschirm, Bildschirmschoner und Zeiten
+  sollten gleich funktionieren. Die Tastencodes der Fernbedienung können abweichen (Streamer: YouTube =
+  `BUTTON_3`, Netflix = `BUTTON_4`, siehe `/system/usr/keylayout/Vendor_18d1_Product_9451.kl`).
+- **Andere Android-TVs (Sony, TCL, …):** Die Liste der Extras in `setup.sh` passt dann nicht – vorher mit
+  `sh source/homescreen/candidates.sh <IP>` prüfen, was gefahrlos aus kann.
+
+## Credits
+
+Startbildschirm basiert auf [tv-detox](https://github.com/Ansub/tv-detox) von Ansub Khan (MIT-Lizenz,
+siehe `source/homescreen/LICENSE`). Eigene Änderungen: Tageszeit-Hintergrund mit Dithering, Begrüßung,
+Symbolleiste statt unterer Reihe, Tailscale-Status, Fokusrahmen, Home/Zurück zur ersten App.

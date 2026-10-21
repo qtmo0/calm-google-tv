@@ -1,0 +1,13 @@
+# Build-Ausgaben
+source/*/out/
+
+# Pro TV: Sicherung und Änderungsprotokoll (enthält IP-Adressen und Geräte-Details).
+# Bleibt lokal bei dir. Für ein PRIVATES Repo kannst du diese Zeile entfernen.
+tvs/
+
+# Signier-Schlüssel: nie öffentlich hochladen. Wer selbst baut, bekommt automatisch eigene.
+# Für Updates auf einem TV, auf dem die Apps schon laufen, braucht man DIESELBEN Schlüssel:
+# getrennt sicher aufbewahren (siehe README, "Signier-Schlüssel").
+source/*/key.jks
+
+.DS_Store

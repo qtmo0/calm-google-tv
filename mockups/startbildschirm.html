@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Startbildschirm Mockup</title>
+<!--
+  Mockup des Google-TV-Startbildschirms (Stand 2026-10-20).
+  Entspricht dem echten Startbildschirm (tv-detox, angepasst). Maße wie auf dem TV:
+  Design-Raster 1920x1080, Rand 96, Kachel-Abstand 36, Ecken-Radius 22,
+  App-Reihe ab y=604, Symbole oben rechts 72er Kreise mit 40er Icons.
+  Logos sind hier durch Text ersetzt; auf dem TV sind es die Banner der Apps.
+  Bedienung: Pfeiltasten bewegen den Fokus, Home oder Escape springt zur ersten App,
+  Buttons unten wechseln die Tageszeit.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; font-family: Roboto, system-ui, sans-serif; color: #fff;
+         display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px 16px; }
+  .tv { width: min(100%, 1280px); aspect-ratio: 16/9; position: relative; overflow: hidden;
+        border-radius: 12px; container-type: inline-size; outline: none; }
+  /* 1 Design-Pixel (von 1920) = 100cqw/1920 */
+  .tv * { box-sizing: border-box; }
+  .clock { position: absolute; left: calc(96 * 100cqw / 1920); top: calc(72 * 100cqw / 1920); }
+  .greet { font-size: calc(34 * 100cqw / 1920); color: rgba(255,255,255,.72); }
+  .date  { font-size: calc(30 * 100cqw / 1920); color: rgba(255,255,255,.66); margin-top: calc(4 * 100cqw / 1920); }
+  .time  { font-size: calc(164 * 100cqw / 1920); font-weight: 400; letter-spacing: -0.02em; line-height: 1;
+           margin-top: calc(6 * 100cqw / 1920); font-variant-numeric: tabular-nums; }
+  .icons { position: absolute; right: calc(80 * 100cqw / 1920); top: calc(76 * 100cqw / 1920);
+           display: flex; align-items: center; gap: calc(12 * 100cqw / 1920); }
+  .ic { width: calc(72 * 100cqw / 1920); height: calc(72 * 100cqw / 1920); border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; position: relative; }
+  .ic svg { width: calc(40 * 100cqw / 1920); height: calc(40 * 100cqw / 1920); }
+  .ic.f { background: rgba(255,255,255,.22); transform: scale(1.1); }
+  .dot { position: absolute; width: calc(14 * 100cqw / 1920); height: calc(14 * 100cqw / 1920); border-radius: 50%;
+         background: #5DCAA5; left: calc(47 * 100cqw / 1920); top: calc(47 * 100cqw / 1920); }
+  .sep { width: 2px; height: calc(36 * 100cqw / 1920); background: rgba(255,255,255,.2); margin: 0 calc(12 * 100cqw / 1920); }
+  .row { position: absolute; left: calc(96 * 100cqw / 1920); right: calc(96 * 100cqw / 1920);
+         top: calc(604 * 100cqw / 1920); display: flex; gap: calc(36 * 100cqw / 1920); }
+  .slot { flex: 1; position: relative; }
+  .tile { aspect-ratio: 16/9; border-radius: calc(22 * 100cqw / 1920); display: flex; align-items: center;
+          justify-content: center; font-weight: 500; font-size: calc(40 * 100cqw / 1920); }
+  .slot.f .tile { transform: scale(1.08); box-shadow: 0 0 0 calc(4 * 100cqw / 1920) rgba(255,255,255,.9),
+                  0 calc(20 * 100cqw / 1920) calc(40 * 100cqw / 1920) rgba(0,0,0,.35); }
+  .lbl { position: absolute; left: 0; right: 0; text-align: center; margin-top: calc(22 * 100cqw / 1920);
+         font-size: calc(24 * 100cqw / 1920); visibility: hidden; }
+  .slot.f .lbl { visibility: visible; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center; font-size: 14px; }
+  .bar button { background: #222; color: #ddd; border: 1px solid #444; border-radius: 8px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  .bar button.on { background: #3a3a3a; border-color: #888; color: #fff; }
+  .hint { color: #888; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="tv" id="tv" tabindex="0">
+  <div class="clock">
+    <div class="greet" id="greet">Guten Abend</div>
+    <div class="date">Dienstag, 20. Oktober</div>
+    <div class="time" id="time">19:42</div>
+  </div>
+
+  <div class="icons">
+    <div class="ic" title="Tailscale (VPN an)">
+      <svg viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M120 35 190 62 190 118 172 162 120 205 68 162 50 118 50 62Z M92 122 112 142 150 102"/></svg>
+      <span class="dot"></span>
+    </div>
+    <div class="ic" title="WLAN">
+      <svg viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round"><path d="M24.5 99.5a135 135 0 0 1 191 0M55 130a92 92 0 0 1 130 0M84.6 159.6a50 50 0 0 1 70.8 0"/><circle cx="120" cy="195" r="4"/></svg>
+    </div>
+    <div class="sep"></div>
+    <div class="ic" title="Play Store">
+      <svg viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linejoin="round"><path d="M60 45 60 195 190 120Z"/></svg>
+    </div>
+    <div class="ic" title="Einstellungen">
+      <svg viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round"><path d="M40 70h100M180 70h20M40 170h20M100 170h100"/><circle cx="160" cy="70" r="20"/><circle cx="80" cy="170" r="20"/></svg>
+    </div>
+    <div class="ic" title="App hinzufügen">
+      <svg viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round"><path d="M120 50v140M50 120h140"/></svg>
+    </div>
+  </div>
+
+  <div class="row" id="row">
+    <div class="slot f"><div class="tile" style="background:#0b1030;color:#c9b8ff">Wholphin</div><div class="lbl">Wholphin</div></div>
+    <div class="slot"><div class="tile" style="background:#f4f4f4;color:#e62117">YouTube</div><div class="lbl">YouTube</div></div>
+    <div class="slot"><div class="tile" style="background:#000;color:#fff">ZATTOO</div><div class="lbl">Zattoo</div></div>
+    <div class="slot"><div class="tile" style="background:#151b24;color:#ff8a1f">ZDF</div><div class="lbl">ZDFmediathek</div></div>
+    <div class="slot"><div class="tile" style="background:#0a3482;color:#fff">ARD</div><div class="lbl">ARD Mediathek</div></div>
+    <div class="slot"><div class="tile" style="background:#1a8cff;color:#fff">prime video</div><div class="lbl">Prime Video</div></div>
+  </div>
+</div>
+
+<div class="bar" id="bar">
+  <span>Tageszeit:</span>
+  <button data-p="0">Morgen 5–11</button>
+  <button data-p="1">Tag 11–17</button>
+  <button data-p="2" class="on">Abend 17–22</button>
+  <button data-p="3">Nacht 22–5</button>
+</div>
+<div class="hint">In das Bild klicken, dann Pfeiltasten = Fokus bewegen, Home/Escape = zur ersten App</div>
+
+<script>
+  // Exakt die Farben aus MainActivity.PHASE_COLORS: drei diagonale Stopps + Schein oben links (ARGB → rgba)
+  const PHASES = [
+    { greet: 'Guten Morgen', time: '07:15', c: ['#23192E', '#4A2E3C', '#6E4636'], glow: 'rgba(255,190,140,.22)' },
+    { greet: 'Hallo',        time: '14:30', c: ['#0F2433', '#1B4150', '#2A5F5C'], glow: 'rgba(140,220,210,.18)' },
+    { greet: 'Guten Abend',  time: '19:42', c: ['#171430', '#32213F', '#52293C'], glow: 'rgba(230,150,180,.18)' },
+    { greet: 'Gute Nacht',   time: '23:50', c: ['#04060B', '#0A101C', '#111829'], glow: 'rgba(120,150,220,.10)' },
+  ];
+  const tv = document.getElementById('tv');
+  function setPhase(i) {
+    const p = PHASES[i];
+    tv.style.background = `radial-gradient(68% 120% at 15% 0%, ${p.glow}, transparent 100%),
+                           linear-gradient(to bottom right, ${p.c[0]}, ${p.c[1]}, ${p.c[2]})`;
+    document.getElementById('greet').textContent = p.greet;
+    document.getElementById('time').textContent = p.time;
+    document.querySelectorAll('#bar button').forEach(b => b.classList.toggle('on', +b.dataset.p === i));
+  }
+  document.querySelectorAll('#bar button').forEach(b => b.onclick = () => setPhase(+b.dataset.p));
+
+  // Fokus: App-Reihe unten, Symbole oben; Hoch/Runter wechselt die Ebene
+  const apps = [...document.querySelectorAll('.slot')], icons = [...document.querySelectorAll('.ic')];
+  let layer = 'apps', idx = 0;
+  function render() {
+    apps.forEach((s, i) => s.classList.toggle('f', layer === 'apps' && i === idx));
+    icons.forEach((s, i) => s.classList.toggle('f', layer === 'icons' && i === idx));
+  }
+  tv.addEventListener('keydown', e => {
+    const list = layer === 'apps' ? apps : icons;
+    if (e.key === 'ArrowRight') idx = Math.min(list.length - 1, idx + 1);
+    else if (e.key === 'ArrowLeft') idx = Math.max(0, idx - 1);
+    else if (e.key === 'ArrowUp' && layer === 'apps') { layer = 'icons'; idx = 0; }
+    else if (e.key === 'ArrowDown' && layer === 'icons') { layer = 'apps'; idx = 0; }
+    else if (e.key === 'Home' || e.key === 'Escape') { layer = 'apps'; idx = 0; }
+    else return;
+    e.preventDefault(); render();
+  });
+  apps.forEach((s, i) => s.onclick = () => { layer = 'apps'; idx = i; render(); tv.focus(); });
+  icons.forEach((s, i) => s.onclick = () => { layer = 'icons'; idx = i; render(); tv.focus(); });
+
+  // Startet mit der echten aktuellen Tageszeit, wie auf dem TV
+  const h = new Date().getHours();
+  setPhase(h >= 5 && h < 11 ? 0 : h >= 11 && h < 17 ? 1 : h >= 17 && h < 22 ? 2 : 3);
+  render();
+</script>
+</body>
+</html>

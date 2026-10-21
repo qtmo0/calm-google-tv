@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glühwürmchen Bildschirmschoner</title>
+<!--
+==========================================================================================
+KONTEXT FÜR DEN CHAT (bitte mitlesen)
+
+Das ist ein 1:1-Nachbau meines Bildschirmschoners "Glühwürmchen" für einen Google TV Streamer
+(Android 14) an einem LG-OLED-Fernseher (4K). Auf dem TV läuft er als Android DreamService mit
+OpenGL ES 2.0. Die beiden Shader unten (VERTEX, FRAGMENT) sind WÖRTLICH dieselben wie auf dem TV,
+ebenso Bewegung, Farben und Zahlen. Verbesserungen hier lassen sich deshalb direkt zurück übernehmen.
+
+WAS ER MACHT
+- 7 weiche Lichtpunkte ("Glühwürmchen") schweben langsam durch die Bildmitte, glimmen auf
+  (Sinuskurve über 9-14 s Lebensdauer) und verlöschen, dann taucht eins woanders neu auf.
+- Jeder Punkt = großer Halo + kleiner heller Kern, beides Gauß-Glocken, additiv gemischt.
+- Farben: 5-17 Uhr bunt (Regenbogen), 17-5 Uhr warm (Rosa, Violett, Bernstein).
+  Jeder Punkt wandert langsam durch die Palette.
+- Tempo 0.8. Sicherheitsabstand zum Rand: 22 % links/rechts, 24 % oben/unten
+  (Start- und Zielpunkte liegen nur in diesem inneren Bereich).
+- Gegen Farbstufen/Ringe im dunklen Außenschein: dreieckiges Rauschen (+-1 von 255),
+  ändert sich jedes Bild, wird unter 1/255 Helligkeit schwächer -> Schwarz bleibt echt schwarz.
+- Hintergrund komplett schwarz (OLED).
+
+REGELN, DIE AUF DEM TV GELTEN MÜSSEN
+- OpenGL ES 2.0 (= WebGL 1), Fragment-Shader mit "precision highp float".
+- Wird in 3840x2160 gerendert, 30 Bilder/s. Der Grafikchip ist schwach: Ein Vollbild-Pass,
+  der für jeden Pixel alle 7 Lichter rechnet, schaffte nur 4 Bilder/s. Darum wird jedes
+  Glühwürmchen nur in seinem eigenen Quadrat (Halo-Sigma x 3.3) gezeichnet, mit additivem
+  Blending (glBlendFunc ONE, ONE). Neue Effekte bitte ebenso sparsam halten
+  (möglichst wenig Pixel pro Bild, keine Vollbild-Passes mit Schleifen, keine Texturen-Ketten).
+- Ausgabe ist 8 Bit pro Farbe, das Bild läuft auf einem OLED: sehr dunkle Verläufe zeigen
+  leicht Ringe. Echtes Schwarz soll schwarz bleiben (Strom, Einbrennen, Optik).
+- Nichts darf an den Bildschirmrand (Hue-Ambilight liest die Randfarben; der Schoner soll ruhig
+  wirken). Keine Texte, keine Uhr. Ruhig, entspannt, "Stimmungslicht" - nichts Aufregendes.
+- Nur während der Bildschirmschoner läuft (nach 3 Min., Ruhezustand nach 30 Min.).
+
+ZAHLEN (Design-Raster 960 px breit; scale = Bildbreite / 960)
+- Radius r je Glühwürmchen: 26..46 px * scale; Halo-Sigma = 0.316 * 3 * r, Kern-Sigma = 0.316 * 0.5 * r
+- Halo-Stärke 0.22 * a, Kern-Stärke 0.7 * a, a = sin(alter/lebensdauer * PI)
+- Halo-Farbe HSL(h, s, 62 %), Kern-Farbe HSL(h, s, 70 %), s = 85 % bunt / 80 % warm
+- Bewegung pro Sekunde: x += (zielX - x) * 0.06 * dt; y ebenso + sin(t*0.4 + i) * 3 * scale * dt
+- Farbe: Palette[(i + t*0.03) mod 6], weich überblendet über den kürzeren Weg im Farbkreis
+==========================================================================================
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; color: #ddd; font: 14px system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 16px; }
+  canvas { width: min(100%, 1280px); aspect-ratio: 16/9; background: #000; border-radius: 10px; display: block; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
+  button { background: #222; color: #ddd; border: 1px solid #444; border-radius: 8px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  button.on { border-color: #999; color: #fff; background: #333; }
+  .muted { color: #888; font-size: 13px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div class="bar">
+  <span>Farben:</span>
+  <button id="auto" class="on">Nach Uhrzeit</button>
+  <button id="colourful">Bunt (5–17 Uhr)</button>
+  <button id="warm">Warm (17–5 Uhr)</button>
+  <label>Tempo <input id="tempo" type="range" min="0.2" max="2" step="0.1" value="0.8"> <span id="tv">0.8</span></label>
+  <label><input id="safe" type="checkbox"> Sicherheitsabstand zeigen</label>
+</div>
+<div class="muted" id="fps"></div>
+
+<script>
+// ---- Shader: identisch mit OledDream.java auf dem TV ------------------------------------
+const REACH = 3.3;
+const VERTEX = `
+attribute vec2 aCorner;
+uniform vec4 uFly;
+uniform vec2 uRes;
+varying highp vec2 vD;
+void main() {
+  vD = aCorner * (${REACH} * uFly.z);
+  gl_Position = vec4((uFly.xy + vD) / uRes * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const FRAGMENT = `
+precision highp float;
+uniform vec4 uFly;
+uniform vec4 uHalo;
+uniform vec4 uCore;
+uniform float uFrame;
+varying highp vec2 vD;
+void main() {
+  float d2 = dot(vD, vD);
+  vec3 c = uHalo.rgb * (uHalo.a * exp(-d2 / (2.0 * uFly.z * uFly.z)))
+         + uCore.rgb * (uCore.a * exp(-d2 / (2.0 * uFly.w * uFly.w)));
+  vec2 q = gl_FragCoord.xy + 5.588238 * uFrame;
+  float n1 = fract(52.9829189 * fract(dot(q, vec2(0.06711056, 0.00583715))));
+  float n2 = fract(52.9829189 * fract(dot(q + vec2(17.0, 31.0), vec2(0.06711056, 0.00583715))));
+  float amount = clamp(max(c.r, max(c.g, c.b)) * 255.0, 0.0, 1.0);
+  c += (n1 + n2 - 1.0) * amount / 255.0;
+  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`;
+
+// ---- Konstanten wie auf dem TV ------------------------------------------------------------
+const FLIES = 7, MARGIN_X = 0.22, MARGIN_Y = 0.24;
+const COLOURFUL = [0, 60, 120, 180, 240, 300];
+const WARM = [330, 290, 345, 20, 35, 310];
+let TEMPO = 0.8, paletteMode = 'auto';
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+const W = canvas.width, H = canvas.height, scale = W / 960;
+
+function compile(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERTEX));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAGMENT));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+const aCorner = gl.getAttribLocation(prog, 'aCorner');
+const U = n => gl.getUniformLocation(prog, n);
+const uRes = U('uRes'), uFly = U('uFly'), uHalo = U('uHalo'), uCore = U('uCore'), uFrame = U('uFrame');
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(aCorner);
+gl.vertexAttribPointer(aCorner, 2, gl.FLOAT, false, 0, 0);
+gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+gl.viewport(0, 0, W, H);
+
+// ---- Glühwürmchen (wie step() in OledDream.java) ---------------------------------------------
+const rnd = (a, b) => a + Math.random() * (b - a);
+const flies = [];
+function place(i, first) {
+  flies[i] = {
+    x: rnd(W * MARGIN_X, W * (1 - MARGIN_X)), y: rnd(H * MARGIN_Y, H * (1 - MARGIN_Y)),
+    tx: rnd(W * MARGIN_X, W * (1 - MARGIN_X)), ty: rnd(H * MARGIN_Y, H * (1 - MARGIN_Y)),
+    life: rnd(9, 14), age: first ? rnd(0, 9) : 0, r: rnd(26, 46) * scale,
+  };
+}
+for (let i = 0; i < FLIES; i++) place(i, true);
+
+function warmNow() {
+  if (paletteMode !== 'auto') return paletteMode === 'warm';
+  const h = new Date().getHours(); return h >= 17 || h < 5;
+}
+function hueAt(index, warm) {
+  const p = warm ? WARM : COLOURFUL, n = p.length;
+  const f = ((index % n) + n) % n, lo = Math.floor(f), k = f - lo;
+  const a = p[lo], b = p[(lo + 1) % n], d = ((b - a + 540) % 360) - 180;
+  return ((a + d * k) % 360 + 360) % 360;
+}
+function hslToRgb(h, s, l) {
+  h = (((h % 360) + 360) % 360) / 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = t => { if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t; if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6; return p; };
+  return [f(h + 1/3), f(h), f(h - 1/3)];
+}
+
+let t = 0, last = 0, lastDraw = 0, frameNo = 0, fpsCount = 0, fpsSince = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (now - lastDraw < 33) return;                  // ~30 fps wie auf dem TV
+  const dt = Math.min(0.1, (now - (last || now)) / 1000) * TEMPO;
+  last = now; lastDraw = now; t += dt;
+  const warm = warmNow(), sat = warm ? 0.80 : 0.85;
+
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform2f(uRes, W, H);
+  gl.uniform1f(uFrame, frameNo = (frameNo + 1) % 64);
+  for (let i = 0; i < FLIES; i++) {
+    const f = flies[i];
+    f.age += dt;
+    if (f.age > f.life) { place(i, false); continue; }
+    f.x += (f.tx - f.x) * dt * 0.06;
+    f.y += (f.ty - f.y) * dt * 0.06 + Math.sin(t * 0.4 + i) * dt * 3 * scale;
+    const a = Math.max(0, Math.sin(f.age / f.life * Math.PI));
+    if (a <= 0) continue;
+    const h = hueAt(i + t * 0.03, warm);
+    gl.uniform4f(uFly, f.x, H - f.y, 0.316 * 3 * f.r, 0.316 * 0.5 * f.r);
+    const halo = hslToRgb(h, sat, 0.62), core = hslToRgb(h, sat, 0.70);
+    gl.uniform4f(uHalo, halo[0], halo[1], halo[2], 0.22 * a);
+    gl.uniform4f(uCore, core[0], core[1], core[2], 0.7 * a);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  fpsCount++;
+  if (now - fpsSince > 1000) {
+    document.getElementById('fps').textContent = `${fpsCount} Bilder/s (Ziel 30) · intern ${W}×${H}, auf dem TV 3840×2160`;
+    fpsCount = 0; fpsSince = now;
+  }
+  drawSafeArea();
+}
+
+// Sicherheitsabstand als Overlay (nur Vorschau, nicht auf dem TV)
+const overlay = document.createElement('canvas');
+function drawSafeArea() {
+  const on = document.getElementById('safe').checked;
+  canvas.style.outline = on ? '1px dashed #666' : 'none';
+  canvas.style.outlineOffset = '-1px';
+  if (!on) { overlay.remove(); return; }
+  if (!overlay.isConnected) {
+    overlay.style.cssText = 'position:absolute;pointer-events:none';
+    document.body.appendChild(overlay);
+  }
+  const r = canvas.getBoundingClientRect();
+  overlay.style.left = (r.left + window.scrollX + r.width * MARGIN_X) + 'px';
+  overlay.style.top = (r.top + window.scrollY + r.height * MARGIN_Y) + 'px';
+  overlay.style.width = (r.width * (1 - 2 * MARGIN_X)) + 'px';
+  overlay.style.height = (r.height * (1 - 2 * MARGIN_Y)) + 'px';
+  overlay.style.border = '1px dashed rgba(255,255,255,.4)';
+}
+
+function setMode(m) {
+  paletteMode = m;
+  for (const id of ['auto', 'colourful', 'warm']) document.getElementById(id).classList.toggle('on', id === m);
+}
+for (const id of ['auto', 'colourful', 'warm']) document.getElementById(id).onclick = () => setMode(id);
+document.getElementById('tempo').oninput = e => {
+  TEMPO = +e.target.value; document.getElementById('tv').textContent = TEMPO.toFixed(1);
+};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
