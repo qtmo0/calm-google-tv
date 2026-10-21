@@ -47,7 +47,7 @@ Danach, jeweils nach Zustimmung:
 | 7. Neustart + Kontrolle | `sh tvctl.sh reboot <IP>` (wartet selbst 30 s vorher) |
 
 Zum Schluss `sh tvctl.sh info <IP>` und dem Nutzer freien Speicher vorher/nachher zeigen
-(`mem_before` steht in `tvs/<IP>/backup.txt`).
+(`mem_before` steht in `tvs/<modell>_<seriennummer>/backup.txt`).
 
 **App-Liste für den Startbildschirm:** Den Nutzer fragen, welche Apps er nutzt und in welcher Reihenfolge.
 Installierte Apps: `adb -s <IP>:5555 shell pm list packages -3`; Namen per `inventory`. Bis zu 6 Apps passen in
@@ -63,7 +63,7 @@ und will die Taste behalten), Schritt 6 weglassen oder `targetFor()` in
 
 ## Pro TV festgehalten
 
-`tvs/<IP-mit-Bindestrichen>/backup.txt` (Ausgangszustand, nie löschen) und `changes.md` (jede Änderung mit
+`tvs/<modell>_<seriennummer>/backup.txt` (Ausgangszustand, nie löschen; Ordnername kommt von `tvctl.sh`, die IP darf sich ändern) und `changes.md` (jede Änderung mit
 Rückgängig-Befehl, schreibt `tvctl.sh` selbst). Änderungen, die du ausnahmsweise per Hand machst, dort
 nachtragen. `tvs/` ist per `.gitignore` vom öffentlichen Repo ausgeschlossen und bleibt beim Nutzer lokal –
 nicht löschen, `undo` braucht es.

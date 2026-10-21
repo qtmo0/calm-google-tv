@@ -55,7 +55,7 @@ Restart once at the end and check that the TV starts normally.
 
 </details>
 
-Claude legt dabei `tvs/<IP>/` mit Sicherung und Änderungsprotokoll an – den Ordner danach behalten,
+Claude legt dabei `tvs/<modell>_<seriennummer>/` mit Sicherung und Änderungsprotokoll an – den Ordner danach behalten,
 damit sich alles rückgängig machen lässt.
 
 ## Was drin ist
@@ -84,11 +84,14 @@ source/homescreen/  Startbildschirm (aus tv-detox weiterentwickelt), Java, ohne 
 source/screensaver/ Bildschirmschoner „Glühwürmchen“ (OpenGL ES 2.0 DreamService)
 source/remote-keys/ Fernbedienungs-Tasten (AccessibilityService)
 mockups/            HTML-Entwürfe: Startbildschirm, Bildschirmschoner (gleicher Shader wie auf dem TV)
-tvs/<IP>/           Pro TV: backup.txt (Ausgangszustand) und changes.md (jede Änderung + Rückgängig)
+tvs/<modell>_<sn>/  Pro TV: backup.txt (Ausgangszustand) und changes.md (jede Änderung + Rückgängig)
 ```
 
-Jeder TV bekommt seinen eigenen Ordner unter `tvs/`, benannt nach seiner IP (`192-168-1-50`).
-Diese Ordner bleiben lokal bei dir (per `.gitignore` ausgeschlossen, weil sie IP-Adressen enthalten).
+Jeder TV bekommt seinen eigenen Ordner unter `tvs/`, benannt nach Modell und Seriennummer
+(z. B. `google-tv-streamer_1A2B3C4D5E6F`) – nicht nach der IP, denn die kann sich ändern (LAN statt
+WLAN, neuer Router). Ändert sich die IP, verbindest du dich einfach mit der neuen; Sicherung und Protokoll
+werden trotzdem gefunden. Die aktuelle IP steht am TV unter Einstellungen → Netzwerk & Internet.
+Diese Ordner bleiben lokal bei dir (per `.gitignore` ausgeschlossen, weil sie IP-Adressen und Seriennummern enthalten).
 Nicht löschen – ohne `backup.txt` kann `undo` nicht wissen, wie es vorher war.
 
 ## Einrichten
@@ -121,7 +124,7 @@ Meine Apps für den Startbildschirm, in dieser Reihenfolge: <Apps>.
 ```
 
 Claude liest `CLAUDE.md`, verbindet sich, zeigt dir alle Apps und den Speicher, fragt vor jeder Änderung
-und protokolliert alles in `tvs/<IP>/`. Weitere Prompts: siehe unten.
+und protokolliert alles in `tvs/<modell>_<seriennummer>/`. Weitere Prompts: siehe unten.
 
 ### 3b. Ohne Claude: Skript im Terminal
 
@@ -135,7 +138,7 @@ Eigene Apps und Reihenfolge für den Startbildschirm (Paketnamen, kommagetrennt)
 sh setup.sh 192.168.1.50 "com.github.damontecres.wholphin,com.google.android.youtube.tv,com.zattoo.player"
 ```
 
-Das Skript sichert zuerst den Ausgangszustand in `tvs/<IP>/backup.txt` (nicht löschen!) und fragt dann:
+Das Skript sichert zuerst den Ausgangszustand in `tvs/<modell>_<seriennummer>/backup.txt` (nicht löschen!) und fragt dann:
 
 1. Google-Extras ausschalten – einzeln pro App
 2. Startbildschirm installieren – fragt zusätzlich, ob der Google-TV-Startbildschirm aus darf, und

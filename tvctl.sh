@@ -32,8 +32,6 @@ CMD="$1"; TARGET="$2"
 shift 2
 command -v adb >/dev/null 2>&1 || { echo "adb fehlt. Mac: brew install android-platform-tools" >&2; exit 1; }
 case "$TARGET" in *:*) TV=$TARGET ;; *) TV=$TARGET:5555 ;; esac
-DIR="tvs/$(echo "${TARGET%:*}" | tr '.' '-')"
-BACKUP="$DIR/backup.txt"; LOG="$DIR/changes.md"
 
 # Was nie ausgeschaltet werden darf (Startfähigkeit). Die Einrichtungs-App nur über "home --setup".
 PROTECTED="com.google.android.gms com.google.android.gsf com.android.vending com.android.settings
@@ -65,12 +63,26 @@ connect() {
 }
 
 connect
+
+# Pro TV ein Ordner, benannt nach Modell und Seriennummer – nicht nach der IP, die sich ändern kann
+# (z. B. LAN statt WLAN, anderer Router). Ein alter Ordner mit IP-Namen wird einmalig umbenannt.
+SERIAL=$(tv getprop ro.serialno); [ -n "$SERIAL" ] || SERIAL=$(tv getprop ro.boot.serialno)
+[ -n "$SERIAL" ] || SERIAL=$(tv settings get secure android_id)
+MODEL=$(tv getprop ro.product.model | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-//; s/-$//')
+DIR="tvs/${MODEL}_$SERIAL"
+OLD_DIR="tvs/$(echo "${TARGET%:*}" | tr '.' '-')"
+if [ ! -d "$DIR" ] && [ -f "$OLD_DIR/backup.txt" ]; then
+  mv "$OLD_DIR" "$DIR" && echo "Ordner umbenannt: $OLD_DIR -> $DIR"
+fi
+BACKUP="$DIR/backup.txt"; LOG="$DIR/changes.md"
+
 case "$CMD" in
 
 connect) echo "Verbunden: $(tv getprop ro.product.model) (Android $(tv getprop ro.build.version.release)) unter $TV" ;;
 
 info)
-  echo "Gerät:      $(tv getprop ro.product.model), Android $(tv getprop ro.build.version.release)"
+  echo "Gerät:      $(tv getprop ro.product.model), Android $(tv getprop ro.build.version.release), Seriennr. $SERIAL"
+  echo "Ordner:     $DIR"
   echo "Speicher:   $(mem) frei von $(tv cat /proc/meminfo | awk '/MemTotal/ {printf "%d MB", $2/1024}')"
   echo "Home:       $(home_now)"
   echo "Wachzustand: $(tv dumpsys power | sed -n 's/.*mWakefulness=//p' | head -1)"
