@@ -11,6 +11,53 @@ oder mit einem Skript – und alles lässt sich wieder rückgängig machen. Nich
 Entwickelt und getestet auf einem **Google TV Streamer (Android 14)** an einem **LG-OLED (4K)**.
 Auf anderen Google-TV-Geräten sollte das meiste genauso funktionieren (siehe „Andere Geräte“).
 
+## Schnellstart: ein Prompt, Claude macht den Rest
+
+1. Am Fernseher den Entwicklermodus einschalten (siehe [Schritt 2](#2-am-fernseher-entwicklermodus-einmalig-2-min)) –
+   oder Claude führt dich durch.
+2. [Claude Code](https://claude.com/claude-code) auf dem Computer öffnen, in einem leeren Ordner.
+   Computer und TV müssen im selben WLAN sein.
+3. Diesen Prompt einfügen, `<IP>` und `<deine Apps>` ersetzen (beides darf auch leer bleiben – Claude fragt):
+
+```text
+Hol dir das Projekt https://github.com/qtmo0/calm-google-tv mit
+"git clone https://github.com/qtmo0/calm-google-tv.git" in diesen Ordner,
+wechsle hinein und lies dort zuerst CLAUDE.md und README.md vollständig.
+
+Richte dann damit meinen Google TV ein. IP-Adresse: <IP>
+Apps für den Startbildschirm, in dieser Reihenfolge: <deine Apps>
+
+Halte dich genau an CLAUDE.md: Führe mich durch alles, was ich am TV drücken muss.
+Zeig mir vor jeder Änderung alle Apps in einfachen Worten und den freien Speicher.
+Frag mich vor jeder einzelnen Änderung. Apps nur ausschalten, nie löschen.
+Fehlt adb auf meinem Computer, frag mich, bevor du es installierst.
+Starte am Ende einmal neu und prüfe, dass der TV normal startet.
+```
+
+<details>
+<summary>English prompt</summary>
+
+```text
+Fetch the project https://github.com/qtmo0/calm-google-tv with
+"git clone https://github.com/qtmo0/calm-google-tv.git" into this folder,
+change into it and first read CLAUDE.md and README.md completely
+(they are in German – answer me in English).
+
+Then use it to set up my Google TV. IP address: <IP>
+Apps for the home screen, in this order: <your apps>
+
+Follow CLAUDE.md exactly: walk me through anything I need to press on the TV.
+Before changing anything, show me all apps in plain words and the free memory.
+Ask me before every single change. Only disable apps, never uninstall them.
+If adb is missing on my computer, ask me before installing it.
+Restart once at the end and check that the TV starts normally.
+```
+
+</details>
+
+Claude legt dabei `tvs/<IP>/` mit Sicherung und Änderungsprotokoll an – den Ordner danach behalten,
+damit sich alles rückgängig machen lässt.
+
 ## Was drin ist
 
 | Teil | Was es macht |
@@ -64,7 +111,7 @@ die Skripte in Git Bash ausführen.
 
 Mac und TV müssen im selben Netz sein.
 
-### 3a. Mit Claude Code (empfohlen)
+### 3a. Mit Claude Code, wenn du das Repo schon geklont hast
 
 Claude Code in diesem Ordner öffnen und schreiben:
 
