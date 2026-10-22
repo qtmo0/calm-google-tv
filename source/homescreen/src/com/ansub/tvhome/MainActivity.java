@@ -138,18 +138,26 @@ public class MainActivity extends Activity {
         @Override public void onLost(Network n) { runOnUiThread(MainActivity.this::refreshVpn); }
     };
 
-    // Background and greeting follow the time of day in four calm steps. Checked once at the top of
-    // each hour while Home is in front, and on every return to Home; nothing animates.
+    // Background and greeting follow the time of day in four calm steps. Checked at the top of each
+    // hour, also while another app is in front, so the new background is ready before you come back;
+    // and again on every return to Home, in case the device slept through the hour.
     private TextView greeting;
     private int shownPhase = -1;
+    private boolean resumed;
+    private static final int FADE_MS = 2000;
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable phaseTick = new Runnable() {
         @Override public void run() {
-            applyPhase();
-            long now = System.currentTimeMillis();
-            handler.postDelayed(this, 3_600_000 - now % 3_600_000 + 1000);
+            applyPhase(resumed); // on screen: fade; behind another app: swap quietly
+            scheduleTick();
         }
     };
+
+    private void scheduleTick() {
+        handler.removeCallbacks(phaseTick);
+        long now = System.currentTimeMillis();
+        handler.postDelayed(phaseTick, 3_600_000 - now % 3_600_000 + 1000);
+    }
 
     @Override
     protected void onCreate(Bundle state) {
@@ -185,7 +193,8 @@ public class MainActivity extends Activity {
         tp.topMargin = px(-14); // pull the big digits up under the date
         clock.addView(time, tp);
         root.addView(clock, at(px(MARGIN), px(72), -2, -2));
-        applyPhase();
+        applyPhase(false);
+        scheduleTick();
 
         moveHint = text(px(24), 0xA8FFFFFF, regular);
         moveHint.setText(Strings.t("Use the arrows to move it, then press OK"));
@@ -201,6 +210,10 @@ public class MainActivity extends Activity {
         f.addDataScheme("package");
         if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(packagesChanged, f, Context.RECEIVER_EXPORTED);
         else registerReceiver(packagesChanged, f);
+        IntentFilter tf = new IntentFilter(TEST_PHASE);
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            registerReceiver(testPhase, tf, android.Manifest.permission.DUMP, null, Context.RECEIVER_EXPORTED);
+        else registerReceiver(testPhase, tf, android.Manifest.permission.DUMP, null);
 
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try {
@@ -217,6 +230,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         unregisterReceiver(packagesChanged);
+        unregisterReceiver(testPhase);
         handler.removeCallbacksAndMessages(null);
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try { cm.unregisterNetworkCallback(networkChanged); } catch (Exception ignored) {}
@@ -226,7 +240,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
-        handler.removeCallbacks(phaseTick);
+        resumed = false; // the hourly check keeps running behind other apps
         super.onPause();
     }
 
@@ -306,8 +320,10 @@ public class MainActivity extends Activity {
         }
         refreshNetwork();
         refreshVpn();
-        handler.removeCallbacks(phaseTick);
-        phaseTick.run();
+        // Coming back: if the hour was missed (device asleep), show the right colours straight away.
+        applyPhase(false);
+        resumed = true;
+        scheduleTick();
         View f = getCurrentFocus();
         if (f == null && !tiles.isEmpty()) tiles.get(0).requestFocus();
     }
@@ -347,32 +363,78 @@ public class MainActivity extends Activity {
             {"Guten Morgen", "Good morning"}, {"Hallo", "Hello"},
             {"Guten Abend", "Good evening"}, {"Gute Nacht", "Good night"}};
 
+    // For testing the phase change without touching the TV's clock. Only adb may send it (the sender
+    // needs the DUMP permission, which the adb shell has and apps don't):
+    //   adb shell am broadcast -a com.ansub.tvhome.TEST_PHASE --ei phase 2     (0-3; -1 = real time again)
+    // It acts like the top of the hour: fades if Home is on screen, otherwise swaps quietly.
+    private static final String TEST_PHASE = "com.ansub.tvhome.TEST_PHASE";
+    private static int phaseOverride = -1;
+    private final BroadcastReceiver testPhase = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            phaseOverride = Math.max(-1, Math.min(3, i.getIntExtra("phase", -1)));
+            android.util.Log.i("tvhome", "test phase " + phaseOverride + (resumed ? " (on screen, fade)" : " (behind, quiet)"));
+            applyPhase(resumed);
+        }
+    };
+
     private static int phaseNow() {
+        if (phaseOverride >= 0) return phaseOverride;
         int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
         return h >= 5 && h < 11 ? 0 : h >= 11 && h < 17 ? 1 : h >= 17 && h < 22 ? 2 : 3;
     }
 
     // Swaps the window background only when the phase changes: drawn once by the window, no extra view.
-    // The GPU-drawn gradient shows at once; a dithered bitmap of the same gradient replaces it as soon
-    // as a background thread has computed it, because the dark gradients band visibly on an OLED and
-    // the GPU ignores the dither flag.
-    private void applyPhase() {
+    // The final picture is a dithered bitmap (dark gradients band visibly on an OLED and the GPU ignores
+    // the dither flag), worked out on a low-priority thread in a fraction of a second.
+    //  fade = true (Home on screen): the old picture stays until the new one is ready, then they
+    //         cross-fade over FADE_MS.
+    //  fade = false (behind another app, at start, or on return): the GPU gradient of the new phase is
+    //         set at once, so the old time of day never shows; the bitmap replaces it when ready.
+    private void applyPhase(final boolean fade) {
         final int p = phaseNow();
         if (p == shownPhase) return;
         shownPhase = p;
-        if (!(getWindow().getDecorView().getBackground() instanceof BitmapDrawable))
-            getWindow().setBackgroundDrawable(background(p));
+        if (!fade) getWindow().setBackgroundDrawable(background(p));
         boolean de = "de".equals(java.util.Locale.getDefault().getLanguage());
         greeting.setText(GREETINGS[p][de ? 0 : 1]);
         final int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
         final float glowR = px(1300);
         new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
             final Bitmap b = ditheredBackground(PHASE_COLORS[p], w, h, glowR);
             runOnUiThread(() -> {
-                if (p == shownPhase && !isDestroyed())
-                    getWindow().setBackgroundDrawable(new BitmapDrawable(getResources(), b));
+                if (p != shownPhase || isDestroyed()) return;
+                android.util.Log.i("tvhome", "background ready, phase " + p + (fade && resumed ? " (fading)" : " (swapped quietly)"));
+                final BitmapDrawable next = new BitmapDrawable(getResources(), b);
+                final Bitmap prev = shownBitmap;
+                shownBitmap = b;
+                Drawable old = getWindow().getDecorView().getBackground();
+                if (fade && resumed && old != null) {
+                    final android.graphics.drawable.TransitionDrawable t =
+                            new android.graphics.drawable.TransitionDrawable(new Drawable[] {old, next});
+                    t.setCrossFadeEnabled(true);
+                    getWindow().setBackgroundDrawable(t);
+                    t.startTransition(FADE_MS);
+                    // Afterwards keep only the new picture, then free the old one.
+                    handler.postDelayed(() -> {
+                        if (getWindow().getDecorView().getBackground() == t) getWindow().setBackgroundDrawable(next);
+                        freeLater(prev);
+                    }, FADE_MS + 100);
+                } else {
+                    getWindow().setBackgroundDrawable(next);
+                    freeLater(prev);
+                }
             });
         }, "background").start();
+    }
+
+    // An 8 MB background bitmap and its GPU copy would otherwise linger until a garbage collection, which
+    // the small Java heap rarely triggers. Freed once a few frames have shown the new one.
+    private Bitmap shownBitmap;
+
+    private void freeLater(final Bitmap b) {
+        if (b == null) return;
+        handler.postDelayed(() -> { if (b != shownBitmap && !b.isRecycled()) b.recycle(); }, 500);
     }
 
     // The same picture as background(): a top-left to bottom-right gradient through three colours, with
