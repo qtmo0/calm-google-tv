@@ -551,7 +551,8 @@ public class MainActivity extends Activity {
         // status (settings shortcuts, Tailscale, network), then actions (Play Store, HDMI inputs,
         // Settings, Add app). Added last, so the first app keeps first focus; Up from the apps reaches them.
         boolean vpn = launchIntent(pm, TAILSCALE) != null;
-        boolean store = !apps.contains(PLAY_STORE) && launchIntent(pm, PLAY_STORE) != null;
+        // The bar stays the same whatever is in the app row (also when Play Store is a tile there too).
+        boolean store = launchIntent(pm, PLAY_STORE) != null;
         List<TvInputInfo> inputs = hdmiInputs();
         List<Integer> quick = quickList();
         int ib = px(ICON_BUTTON), ig = px(ICON_GAP), split = px(36);
@@ -679,20 +680,22 @@ public class MainActivity extends Activity {
                     || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
             boolean down = ev.getAction() == KeyEvent.ACTION_DOWN;
             if (key.equals(movingKey)) return moveKey(key, code, ok, down);
-            // The app list wraps around: Left on the first app goes to the last, Right on the last to the
-            // first (across rows if there are several). Not while moving an app; the icons don't wrap.
+            // Left/Right walk the apps in reading order: past the end of a row into the next one, back from
+            // the start of a row to the end of the one above, and round from the last app to the first.
+            // Not while moving an app; the icons keep Android's own focus. Up/Down are left to Android too.
             if (editable && movingKey == null && rowApps.size() > 1
                     && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
-                int at = rowApps.indexOf(key), last = rowApps.size() - 1;
-                boolean wrap = (code == KeyEvent.KEYCODE_DPAD_LEFT && at == 0)
-                        || (code == KeyEvent.KEYCODE_DPAD_RIGHT && at == last);
-                if (wrap) {
-                    if (down && ev.getRepeatCount() == 0) {
-                        View to = tile(rowApps.get(at == 0 ? last : 0));
-                        if (to != null) to.requestFocus();
+                if (down) {
+                    int at = rowApps.indexOf(key), n = rowApps.size();
+                    int to = code == KeyEvent.KEYCODE_DPAD_LEFT ? at - 1 : at + 1;
+                    boolean wraps = to < 0 || to >= n;
+                    // A held-down key steps through the apps but stops at the ends instead of spinning round.
+                    if (at >= 0 && !(wraps && ev.getRepeatCount() > 0)) {
+                        View t = tile(rowApps.get((to + n) % n));
+                        if (t != null) t.requestFocus();
                     }
-                    return true; // also swallow held-down repeats, so it doesn't spin round and round
                 }
+                return true;
             }
             if (editable && code == KeyEvent.KEYCODE_MENU) {
                 if (!down) showEditMenu(key);
