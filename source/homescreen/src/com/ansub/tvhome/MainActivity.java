@@ -679,6 +679,21 @@ public class MainActivity extends Activity {
                     || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
             boolean down = ev.getAction() == KeyEvent.ACTION_DOWN;
             if (key.equals(movingKey)) return moveKey(key, code, ok, down);
+            // The app list wraps around: Left on the first app goes to the last, Right on the last to the
+            // first (across rows if there are several). Not while moving an app; the icons don't wrap.
+            if (editable && movingKey == null && rowApps.size() > 1
+                    && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                int at = rowApps.indexOf(key), last = rowApps.size() - 1;
+                boolean wrap = (code == KeyEvent.KEYCODE_DPAD_LEFT && at == 0)
+                        || (code == KeyEvent.KEYCODE_DPAD_RIGHT && at == last);
+                if (wrap) {
+                    if (down && ev.getRepeatCount() == 0) {
+                        View to = tile(rowApps.get(at == 0 ? last : 0));
+                        if (to != null) to.requestFocus();
+                    }
+                    return true; // also swallow held-down repeats, so it doesn't spin round and round
+                }
+            }
             if (editable && code == KeyEvent.KEYCODE_MENU) {
                 if (!down) showEditMenu(key);
                 return true;

@@ -63,7 +63,7 @@ damit sich alles rückgängig machen lässt.
 | Teil | Was es macht |
 |---|---|
 | **Aufräumen** | Schaltet Werbung, Empfehlungen, Play Filme und den Google-Bildschirmschoner aus. Nur *ausschalten*, nichts wird gelöscht. Animationen aus. |
-| **Startbildschirm** | Begrüßung, Datum, große Uhr. Eine Reihe App-Kacheln. Oben rechts kleine Symbole (Tailscale-VPN mit Statuspunkt, WLAN, Play Store, Einstellungen, App hinzufügen). Hintergrund-Farbverlauf nach Tageszeit, ohne Farbstufen; wechselt sanft (2 s Überblendung) oder wird im Hintergrund vorbereitet, während eine andere App läuft. Home/Zurück springt zur ersten App. Basiert auf [tv-detox](https://github.com/Ansub/tv-detox) (MIT), stark angepasst. |
+| **Startbildschirm** | Begrüßung, Datum, große Uhr. Eine Reihe App-Kacheln. Oben rechts kleine Symbole (Tailscale-VPN mit Statuspunkt, WLAN, Play Store, Einstellungen, App hinzufügen). Hintergrund-Farbverlauf nach Tageszeit, ohne Farbstufen; wechselt sanft (2 s Überblendung) oder wird im Hintergrund vorbereitet, während eine andere App läuft. Home/Zurück springt zur ersten App; Links/Rechts läuft in der App-Reihe im Kreis. Basiert auf [tv-detox](https://github.com/Ansub/tv-detox) (MIT), stark angepasst. |
 | **Bildschirmschoner „Glühwürmchen“** | 7 weiche Lichter schweben langsam in der Bildmitte. 5–17 Uhr bunt, 17–5 Uhr warm. OpenGL-Shader in echtem 4K, 30 Bilder/s, ~6–9 % eines CPU-Kerns. Nichts berührt den Rand (gut mit Hue-Ambilight). |
 | **Fernbedienungs-Tasten** | YouTube-Taste öffnet YouTube, Netflix-Taste öffnet Wholphin. Kleine Helfer-App als Bedienungshilfe, ohne Internetzugriff. |
 | **Zeiten** | Bildschirmschoner nach 3 Min., Ruhezustand nach 30 Min. ohne Tastendruck. |
