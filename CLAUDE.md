@@ -44,7 +44,8 @@ Danach, jeweils nach Zustimmung:
 | 4. Zeiten | `sh tvctl.sh times <IP> 3 30` (Schoner 3 Min., Ruhe 30 Min.; Nutzer darf andere Werte wählen) |
 | 5. Animationen aus | `sh tvctl.sh animations <IP> off` |
 | 6. Fernbedienungs-Tasten | `sh tvctl.sh remote-keys <IP>` – nur wenn `keys` BUTTON_3/BUTTON_4 zeigt. Mit der **echten** Fernbedienung testen lassen |
-| 7. Neustart + Kontrolle | `sh tvctl.sh reboot <IP>` (wartet selbst 30 s vorher) |
+| 7. LG-Fernseher koppeln (nur wenn der Streamer an einem LG mit webOS hängt; fragen!) | `sh tvctl.sh lg-pair <IP>` – der Nutzer muss am LG mit der LG-Fernbedienung „Zulassen“ drücken. Danach erscheinen Konsolen/HDMI-Geräte in der Leiste |
+| 8. Neustart + Kontrolle | `sh tvctl.sh reboot <IP>` (wartet selbst 30 s vorher) |
 
 Zum Schluss `sh tvctl.sh info <IP>` und dem Nutzer freien Speicher vorher/nachher zeigen
 (`mem_before` steht in `tvs/<modell>_<seriennummer>/backup.txt`).
@@ -104,6 +105,22 @@ nicht löschen, `undo` braucht es.
   `-1` = wieder echte Uhrzeit – danach **immer** zurückstellen). Wirkt wie die volle Stunde: Ist Home offen,
   wird 2 s übergeblendet; liegt eine andere App vorne, wird der Hintergrund still vorbereitet. Log:
   `adb logcat -d -s tvhome` („background ready, phase N (fading|swapped quietly)“).
+
+## LG-Fernseher (HDMI-Geräte in der Leiste)
+
+- Code: `source/homescreen/src/com/ansub/tvhome/LgTv.java` (Suche per SSDP, eigener WebSocket-Client über
+  TLS auf Port 3001, Zertifikat wird beim Koppeln gemerkt und danach geprüft) und in `MainActivity.java`
+  `lgListener` (Filter), `showTvMenu`/`menu` (Menü am Zahnrad), `buildTiles` (Symbole, Punkte, Trennstriche).
+- Regeln: eigener Eingang = der, dessen CEC-Name dem Gerätenamen entspricht (`settings get global device_name`);
+  Soundbars (ARC/`audio`) weg; gezeigt wird, was der LG kennt oder was an ist. Oranger Punkt = LG meldet
+  „verbunden“ und CEC nicht „Off“. Verschlechterungen (kein Konsolen-Typ mehr, anderer Name, verschwunden)
+  erst nach zwei Meldungen in Folge – direkt nach dem Umschalten meldet der LG kurz Unvollständiges.
+- Bekannt: Nach dem Wechsel in den Ruhemodus meldet der LG ein Gerät noch Minuten als „an“; dann weckt
+  Umschalten es nicht. Komplett aus erkennt er nach ~10 s. Mehrere gleichzeitige Verbindungen zum LG
+  (z. B. ein Test vom Mac und der Startbildschirm) lehnt der LG gelegentlich ab – kurz warten.
+- Logs: `adb logcat -d -s tvhome-lg` (Kopplung, „switching TV to …“, Antwort des LG).
+- Testen ohne Fernbedienung: Menü am Zahnrad mit `adb shell input keyevent KEYCODE_MENU` (Fokus aufs Zahnrad
+  vorher mit den Pfeiltasten). Halten von OK lässt sich per adb nicht zuverlässig nachstellen.
 
 ## Notfall: TV startet nicht mehr richtig
 

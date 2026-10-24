@@ -10,7 +10,8 @@ import android.graphics.drawable.Drawable;
 
 // Tiny white outline icons on a 24x24 grid, so the app needs no image resources.
 // Each icon is a list of ops: 0=moveTo x y, 1=lineTo x y, 2=close, 3=circle cx cy r,
-// 4=arc cx cy r startDegrees sweepDegrees (0 degrees is 3 o'clock, going clockwise).
+// 4=arc cx cy r startDegrees sweepDegrees (0 degrees is 3 o'clock, going clockwise),
+// 5=curve x1 y1 x2 y2 x y (a cubic Bezier from the current point).
 final class LineIcon extends Drawable {
     static final int[] PLAY = {0, 60, 45, 1, 60, 195, 1, 190, 120, 2};
     static final int[] HDMI = {0, 30, 90, 1, 210, 90, 1, 210, 130, 1, 185, 160, 1, 55, 160, 1, 30, 130, 2,
@@ -30,6 +31,11 @@ final class LineIcon extends Drawable {
             1, 80, 165, 1, 40, 165, 2, 0, 85, 60, 1, 85, 100, 0, 120, 60, 1, 120, 100, 0, 155, 60, 1, 155, 100};
     static final int[] SHIELD = {0, 120, 35, 1, 190, 62, 1, 190, 118, 1, 172, 162, 1, 120, 205, 1, 68, 162,
             1, 50, 118, 1, 50, 62, 2, 0, 92, 122, 1, 112, 142, 1, 150, 102};
+    // A game controller with soft rounded grips, a d-pad on the left and two buttons on the right.
+    static final int[] CONTROLLER = {0, 84, 74, 1, 156, 74, 5, 186, 74, 202, 98, 208, 132,
+            5, 212, 160, 206, 180, 190, 180, 5, 177, 180, 168, 168, 158, 156, 1, 82, 156,
+            5, 72, 168, 63, 180, 50, 180, 5, 34, 180, 28, 160, 32, 132, 5, 38, 98, 54, 74, 84, 74, 2,
+            0, 82, 108, 1, 82, 138, 0, 67, 123, 1, 97, 123, 3, 150, 114, 5, 3, 168, 132, 5};
     static final int[] PICTURE ={0, 30, 50, 1, 210, 50, 1, 210, 165, 1, 30, 165, 2, 0, 120, 165, 1, 120, 200,
             0, 80, 200, 1, 160, 200};
 
@@ -58,6 +64,7 @@ final class LineIcon extends Drawable {
                 case 1: path.lineTo(ops[i + 1] * s, ops[i + 2] * s); i += 3; break;
                 case 2: path.close(); i += 1; break;
                 case 3: path.addCircle(ops[i + 1] * s, ops[i + 2] * s, ops[i + 3] * s, Path.Direction.CW); i += 4; break;
+                case 5: path.cubicTo(ops[i + 1] * s, ops[i + 2] * s, ops[i + 3] * s, ops[i + 4] * s, ops[i + 5] * s, ops[i + 6] * s); i += 7; break;
                 default:
                     float cx = ops[i + 1] * s, cy = ops[i + 2] * s, r = ops[i + 3] * s;
                     arc.set(cx - r, cy - r, cx + r, cy + r);

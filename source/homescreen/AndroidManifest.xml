@@ -5,6 +5,10 @@
     <!-- Only for the network tile: Wi-Fi, Ethernet or offline, and the Wi-Fi signal. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Only for an LG TV on the home network (hold OK on the settings icon > Connect TV): find it
+         (SSDP multicast), then read its HDMI inputs and switch between them. Nothing leaves the home network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Android 11+ only shows apps a home screen asks to see: TV apps and normal apps. -->
     <queries>
         <intent>

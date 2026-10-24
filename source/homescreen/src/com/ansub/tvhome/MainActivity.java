@@ -85,6 +85,7 @@ public class MainActivity extends Activity {
     private static final String NETWORK = "network";
     // A VPN switch, not something to watch: it sits with the icons at the top right, never in the app row.
     private static final String TAILSCALE = "com.tailscale.ipn";
+    private static final String LG_INPUT = "lg:"; // bar keys for an LG TV's inputs: "lg:HDMI_1"
     private static final int OFFLINE = 0, ETHERNET = 4; // network states; 1 to 3 are Wi-Fi bars
     // TCL keeps its own Picture and Sound panels in a service; Android's Sound page is missing there.
     private static final String TCL_SHOW_WINDOW = "com.tcl.settings.SHOW_WINDOW";
@@ -103,6 +104,28 @@ public class MainActivity extends Activity {
     private final List<View> tiles = new ArrayList<>();
     private final List<View> iconCaptions = new ArrayList<>(); // bar captions and divider, rebuilt with the tiles
     private final java.util.Map<View, TextView> captionOf = new java.util.HashMap<>();
+
+    // An LG TV this Streamer is plugged into (see LgTv): its inputs that belong in the bar, and what the
+    // menu on the settings icon shows before pairing (null: still looking, "": none on the network).
+    private LgTv lg;
+    private List<LgTv.Input> lgInputs;
+    private String lgInputsShown = "";
+    private String lgFound;
+    private Dialog openMenu;
+    private String lgForegroundSeen;
+    // Dots at the bar icons: green = VPN connected; orange = an HDMI device reports "on" (the TV can't
+    // tell running from rest mode, so orange means "on or resting"). The HDMI dots can be hidden
+    // in the TV menu ("Show device status"), remembered across restarts.
+    private static final int DOT_GREEN = 0xFF5DCAA5, DOT_ORANGE = 0xFFF29B4B;
+    private static final String SHOW_DEVICE_DOTS = "deviceDots";
+    private final List<View> hdmiDots = new ArrayList<>();
+
+    private boolean showDeviceDots() { return getSharedPreferences(PREFS, 0).getBoolean(SHOW_DEVICE_DOTS, true); }
+    // Right after switching inputs the TV briefly reports them half-filled (a console without its type,
+    // or missing). A step "down" (no longer a console, other name, gone) only counts once it has been
+    // reported twice in a row; anything else applies at once. In memory only, so it follows the TV.
+    private final java.util.Map<String, LgTv.Input> lgLast = new java.util.HashMap<>();
+    private final java.util.Map<String, Integer> lgDoubt = new java.util.HashMap<>();
     private boolean dirty = true;
     private java.util.Locale shownLocale; // the TV's language (and region) when the page was built
     private String focusedKey;
@@ -195,6 +218,7 @@ public class MainActivity extends Activity {
         tp.topMargin = px(-14); // pull the big digits up under the date
         clock.addView(time, tp);
         root.addView(clock, at(px(MARGIN), px(72), -2, -2));
+        lg = new LgTv(this, handler, lgListener);
         applyPhase(false);
         scheduleTick();
 
@@ -216,6 +240,10 @@ public class MainActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= 33)
             registerReceiver(testPhase, tf, android.Manifest.permission.DUMP, null, Context.RECEIVER_EXPORTED);
         else registerReceiver(testPhase, tf, android.Manifest.permission.DUMP, null);
+        IntentFilter pf = new IntentFilter(LG_PAIR);
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            registerReceiver(lgPair, pf, android.Manifest.permission.DUMP, null, Context.RECEIVER_EXPORTED);
+        else registerReceiver(lgPair, pf, android.Manifest.permission.DUMP, null);
         TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
         if (tim != null) try { tim.registerCallback(inputsChanged, handler); } catch (Exception ignored) {}
 
@@ -235,6 +263,8 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         unregisterReceiver(packagesChanged);
         unregisterReceiver(testPhase);
+        unregisterReceiver(lgPair);
+        lg.stop();
         TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
         if (tim != null) try { tim.unregisterCallback(inputsChanged); } catch (Exception ignored) {}
         handler.removeCallbacksAndMessages(null);
@@ -247,6 +277,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         resumed = false; // the hourly check keeps running behind other apps
+        lg.stop();       // the LG connection only lives while Home is in front
+        handler.removeCallbacks(lgKeepAlive);
+        if (openMenu != null) openMenu.dismiss();
         super.onPause();
     }
 
@@ -255,6 +288,7 @@ public class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         if (saveConfig(intent)) buildTiles();
+        if (openMenu != null && intent != null && intent.hasCategory(Intent.CATEGORY_HOME)) openMenu.dismiss();
         // Home pressed while already home: jump back to the first app.
         if (intent != null && intent.hasCategory(Intent.CATEGORY_HOME) && hasWindowFocus()) jumpToFirst();
     }
@@ -326,6 +360,8 @@ public class MainActivity extends Activity {
         }
         refreshNetwork();
         refreshVpn();
+        if (lg.paired()) { lg.start(false); handler.removeCallbacks(lgKeepAlive); handler.postDelayed(lgKeepAlive, 10_000); }
+        else lookForLg();
         // Tailscale sets the VPN up or tears it down a moment after you leave its app: look again.
         handler.postDelayed(this::refreshVpn, 1000);
         handler.postDelayed(this::refreshVpn, 3000);
@@ -516,6 +552,7 @@ public class MainActivity extends Activity {
             ((ViewGroup) wrap.getParent()).removeView(wrap);
         }
         for (View v : iconCaptions) root.removeView(v);
+        hdmiDots.clear();
         iconCaptions.clear();
         captionOf.clear();
         tiles.clear();
@@ -565,13 +602,22 @@ public class MainActivity extends Activity {
         boolean vpn = launchIntent(pm, TAILSCALE) != null;
         // The bar stays the same whatever is in the app row (also when Play Store is a tile there too).
         boolean store = launchIntent(pm, PLAY_STORE) != null;
-        List<TvInputInfo> inputs = hdmiInputs();
+        // HDMI inputs: from the paired LG TV (see LgTv) if there is one, else the TV's own inputs (Google TV
+        // built into a TV). Each: key, name, game console or not, device on or not.
+        List<String[]> inputs = new ArrayList<>();
+        if (lg.paired()) {
+            if (lgInputs != null) for (LgTv.Input in : lgInputs)
+                inputs.add(new String[] {LG_INPUT + in.id, in.label, in.game ? "game" : "", in.on ? "on" : ""});
+        } else {
+            for (TvInputInfo in : hdmiInputs()) inputs.add(new String[] {in.getId(), inputLabel(in), "", ""});
+        }
         List<Integer> quick = quickList();
         int ib = px(ICON_BUTTON), ig = px(ICON_GAP), split = px(36);
         int count = quick.size() + (vpn ? 1 : 0) + 1 + (store ? 1 : 0) + inputs.size() + 2;
+        int splits = inputs.isEmpty() ? 1 : 2; // a second line right of the HDMI inputs, only if there are any
         // The last icon's right edge lines up with the apps' (its focus circle sticks out past them).
         int qx = getResources().getDisplayMetrics().widthPixels - m + (ib - px(ICON_SIZE)) / 2
-                - count * ib - (count - 1) * ig - split;
+                - count * ib - (count - 1) * ig - splits * split;
         for (int q : quick) {
             addIcon(QUICK + QUICK_NAMES[q], Strings.t(QUICK_LABELS[q]), new LineIcon(QUICK_ICONS[q]), qx);
             qx += ib + ig;
@@ -579,16 +625,7 @@ public class MainActivity extends Activity {
         vpnDot = null;
         if (vpn) {
             ImageView iv = addIcon(TAILSCALE, "Tailscale", new LineIcon(LineIcon.SHIELD), qx);
-            GradientDrawable dot = new GradientDrawable();
-            dot.setShape(GradientDrawable.OVAL);
-            dot.setColor(0xFF5DCAA5);
-            vpnDot = new View(this);
-            vpnDot.setBackground(dot);
-            int d = px(14);
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(d, d, Gravity.CENTER);
-            lp.leftMargin = px(18);
-            lp.topMargin = px(18);
-            ((FrameLayout) iv.getParent()).addView(vpnDot, lp);
+            vpnDot = addDot(iv, DOT_GREEN);
             qx += ib + ig;
         }
         netIcon = addIcon(NETWORK, Strings.t("Network"), null, qx);
@@ -597,17 +634,19 @@ public class MainActivity extends Activity {
         refreshVpn();
         qx += ib + ig;
 
-        View line = new View(this);
-        line.setBackgroundColor(0x33FFFFFF);
-        root.addView(line, at(qx - ig + (split + ig) / 2 - 1, px(ICON_TOP) + ib / 2 - px(18), Math.max(1, px(2)), px(36)));
-        iconCaptions.add(line);
-        qx += split;
+        qx = addDivider(qx, ig, ib, split);
 
-        // HDMI inputs first, left of Play Store (only those with a device plugged in, see hdmiInputs).
-        for (TvInputInfo in : inputs) {
-            addIcon(in.getId(), inputLabel(in), new LineIcon(LineIcon.HDMI), qx);
+        // HDMI inputs first, left of Play Store, then a second line.
+        for (String[] in : inputs) {
+            ImageView iv = addIcon(in[0], in[1], new LineIcon("game".equals(in[2]) ? LineIcon.CONTROLLER : LineIcon.HDMI), qx);
+            if ("on".equals(in[3])) { // the device reports "on" (or is resting, see DOT_ORANGE)
+                View dot = addDot(iv, DOT_ORANGE);
+                dot.setVisibility(showDeviceDots() ? View.VISIBLE : View.INVISIBLE);
+                hdmiDots.add(dot);
+            }
             qx += ib + ig;
         }
+        if (!inputs.isEmpty()) qx = addDivider(qx, ig, ib, split);
         if (store) {
             addIcon(PLAY_STORE, "Play Store", new LineIcon(LineIcon.PLAY), qx);
             qx += ib + ig;
@@ -623,6 +662,30 @@ public class MainActivity extends Activity {
         View restore = null;
         for (View t : tiles) if (t.getTag().equals(want)) restore = t;
         if (restore != null) restore.requestFocus();
+    }
+
+    // A thin vertical line between groups in the bar. Returns where the next icon starts.
+    private int addDivider(int qx, int ig, int ib, int split) {
+        View line = new View(this);
+        line.setBackgroundColor(0x33FFFFFF);
+        root.addView(line, at(qx - ig + (split + ig) / 2 - 1, px(ICON_TOP) + ib / 2 - px(18), Math.max(1, px(2)), px(36)));
+        iconCaptions.add(line);
+        return qx + split;
+    }
+
+    // The small dot at an icon's lower right (see DOT_GREEN, DOT_ORANGE).
+    private View addDot(ImageView iv, int color) {
+        GradientDrawable dot = new GradientDrawable();
+        dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(color);
+        View v = new View(this);
+        v.setBackground(dot);
+        int d = px(14);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(d, d, Gravity.CENTER);
+        lp.leftMargin = px(18);
+        lp.topMargin = px(18);
+        ((FrameLayout) iv.getParent()).addView(v, lp);
+        return v;
     }
 
     private void addTile(ViewGroup parent, final String key, String label, Drawable banner, int[] lineIcon, Drawable appIcon,
@@ -771,6 +834,15 @@ public class MainActivity extends Activity {
             caption.setVisibility(has ? View.VISIBLE : View.INVISIBLE);
         });
         card.setOnClickListener(v -> open(key));
+        if (SETTINGS.equals(key)) {
+            // Hold OK (or press Menu) on the settings icon: the TV menu. A plain OK still opens Settings.
+            card.setOnLongClickListener(v -> { showTvMenu(v); return true; });
+            card.setOnKeyListener((v, code, ev) -> {
+                if (code != KeyEvent.KEYCODE_MENU) return false;
+                if (ev.getAction() == KeyEvent.ACTION_UP) showTvMenu(v);
+                return true;
+            });
+        }
         FrameLayout wrap = new FrameLayout(this);
         wrap.setClipChildren(false);
         wrap.addView(card, new FrameLayout.LayoutParams(b, b));
@@ -807,6 +879,9 @@ public class MainActivity extends Activity {
             return;
         } else if (NETWORK.equals(key)) {
             openNetworkSettings();
+            return;
+        } else if (key.startsWith(LG_INPUT)) {
+            lg.switchTo(key.substring(LG_INPUT.length()));
             return;
         } else if (key.startsWith(QUICK)) {
             openQuick(key.substring(QUICK.length()));
@@ -1278,6 +1353,283 @@ public class MainActivity extends Activity {
     private void inputsChanged() {
         dirty = true;
         refreshApps(); // rebuilds now if Home is in front, else on the way back
+    }
+
+    // ---- LG TV: inputs in the bar, the TV menu on the settings icon ------------------------------
+
+    // Pairing from the computer, for setup with Claude Code: tvctl.sh lg-pair. Like the menu's
+    // "Connect TV"; only adb can send it (DUMP permission).
+    private static final String LG_PAIR = "com.ansub.tvhome.LG_PAIR";
+    private final BroadcastReceiver lgPair = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) { connectLg(); }
+    };
+
+    private final LgTv.Listener lgListener = new LgTv.Listener() {
+        @Override public void onInputs(List<LgTv.Input> all, String foreground) {
+            // Which input is this Streamer? The one whose device calls itself by our device name over
+            // HDMI-CEC ("Wohnzimmer"). Found afresh every time, so moving the Streamer to another port
+            // just works. Fallback when CEC is off: the input the TV shows while Home is on screen, but
+            // only once it has said so twice in a row (right after switching back it still names the
+            // input we came from).
+            SharedPreferences p = getSharedPreferences(LgTv.PREFS, 0);
+            String own = null;
+            String me = Settings.Global.getString(getContentResolver(), "device_name");
+            if (me != null) for (LgTv.Input in : all) if (me.equals(in.cecName)) own = in.id;
+            if (own == null && resumed && foreground != null && foreground.startsWith("com.webos.app.hdmi")) {
+                String fg = "HDMI_" + foreground.substring("com.webos.app.hdmi".length());
+                if (fg.equals(lgForegroundSeen)) own = fg;
+                lgForegroundSeen = fg;
+            }
+            if (own != null && !own.equals(p.getString("own", null))) p.edit().putString("own", own).apply();
+            own = p.getString("own", null);
+            List<LgTv.Input> show = new ArrayList<>();
+            StringBuilder sig = new StringBuilder();
+            java.util.Map<String, LgTv.Input> seen = new java.util.HashMap<>();
+            for (LgTv.Input in : all) {
+                // Not our own input, not a soundbar, and only where the TV knows a device or one is on.
+                // Names and devices come only from the TV: when it forgets one, so does the bar.
+                if (in.id.equals(own) || in.audio) continue;
+                LgTv.Input before = lgLast.get(in.id);
+                boolean wanted = in.known || in.on;
+                if (before != null && (!wanted || (before.game && !in.game) || !before.label.equals(in.label))) {
+                    if (doubt(in.id) < 2) { // not yet: keep what was shown, but take the live on/off
+                        before.on = in.on;
+                        in = before;
+                        wanted = true;
+                    }
+                } else {
+                    lgDoubt.remove(in.id);
+                }
+                if (!wanted) continue;
+                seen.put(in.id, in);
+                show.add(in);
+                sig.append(in.id).append('|').append(in.label).append('|').append(in.on).append('|').append(in.game).append(';');
+            }
+            // An input the TV didn't list at all this time: also only gone after the second time.
+            java.util.Set<String> listed = new java.util.HashSet<>();
+            for (LgTv.Input in : all) listed.add(in.id);
+            for (LgTv.Input before : lgLast.values()) {
+                if (listed.contains(before.id) || seen.containsKey(before.id) || doubt(before.id) >= 2) continue;
+                seen.put(before.id, before);
+                show.add(before);
+                sig.append(before.id).append('|').append(before.label).append('|').append(before.on).append('|').append(before.game).append(';');
+            }
+            java.util.Collections.sort(show, (a, b) -> a.id.compareTo(b.id));
+            lgLast.clear();
+            lgLast.putAll(seen);
+            if (sig.toString().equals(lgInputsShown) && lgInputs != null) return;
+            lgInputsShown = sig.toString();
+            lgInputs = show;
+            dirty = true;
+            refreshApps();
+        }
+
+        @Override public void onStatus(String status) {
+            android.widget.Toast.makeText(MainActivity.this, status, android.widget.Toast.LENGTH_LONG).show();
+            if (status.startsWith("Verbunden")) { dirty = true; refreshApps(); }
+        }
+    };
+
+    // While Home is in front: if the connection to the TV dropped (it can time out), connect again.
+    private final Runnable lgKeepAlive = new Runnable() {
+        @Override public void run() {
+            if (!resumed || !lg.paired()) return;
+            if (!lg.running()) lg.start(false);
+            handler.postDelayed(this, 10_000);
+        }
+    };
+
+    private int doubt(String id) {
+        Integer n = lgDoubt.get(id);
+        int next = n == null ? 1 : n + 1;
+        if (next >= 2) lgDoubt.remove(id); else lgDoubt.put(id, next);
+        return next;
+    }
+
+    // Before pairing: is there an LG TV on the network? Only for the menu's wording; quick (SSDP).
+    private void lookForLg() {
+        if (lgFound != null && !lgFound.isEmpty()) return;
+        lgFound = null;
+        new Thread(() -> {
+            String host = lg.discover();
+            runOnUiThread(() -> lgFound = host == null ? "" : host);
+        }, "lgtv-find").start();
+    }
+
+    private void connectLg() {
+        lg.stop();
+        // The TV asks "Allow?"; LgTv reports progress with onStatus. Use the address the menu found.
+        lg.start(true, lgFound != null && !lgFound.isEmpty() ? lgFound : null);
+    }
+
+    // Hold OK on the settings icon: connect or disconnect the TV, or open Android's settings.
+    private void showTvMenu(View anchor) {
+        final boolean paired = lg.paired();
+        String status = paired ? "Verbunden mit " + lg.model() : null;
+        String[] items;
+        String[] subs;
+        boolean[] enabled;
+        Boolean[] switches;
+        if (paired) {
+            items = new String[] {"Gerätestatus anzeigen", "Trennen", "Android-Einstellungen"};
+            subs = new String[] {null, null, null};
+            enabled = new boolean[] {true, true, true};
+            switches = new Boolean[] {showDeviceDots(), null, null};
+        } else {
+            boolean found = lgFound != null && !lgFound.isEmpty();
+            items = new String[] {"Fernseher verbinden", "Android-Einstellungen"};
+            subs = new String[] {lgFound == null ? "suche …" : found ? "LG-Fernseher gefunden" : "kein LG im Netz", null};
+            enabled = new boolean[] {found, true};
+            switches = new Boolean[] {null, null};
+            if (!found) lookForLg();
+        }
+        menu(anchor, status, items, subs, enabled, switches, which -> {
+            if (which == items.length - 1) { open(SETTINGS); return; }
+            if (paired && which == 0) { // the switch: the menu stays open, the dots follow at once
+                boolean show = !showDeviceDots();
+                getSharedPreferences(PREFS, 0).edit().putBoolean(SHOW_DEVICE_DOTS, show).apply();
+                for (View dot : hdmiDots) dot.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
+                return;
+            }
+            if (paired) {
+                lg.forget();
+                lgInputs = null;
+                lgInputsShown = "";
+                lgLast.clear();
+                lgDoubt.clear();
+                lgFound = null;
+                buildTiles();
+                android.widget.Toast.makeText(this, "Fernseher getrennt", android.widget.Toast.LENGTH_SHORT).show();
+            } else {
+                connectLg();
+            }
+        });
+    }
+
+    // An on/off switch for a menu row: a rounded track (orange when on) with a white knob.
+    private Drawable switchDrawable(boolean on) {
+        GradientDrawable track = new GradientDrawable();
+        track.setCornerRadius(px(17));
+        track.setColor(on ? DOT_ORANGE : 0x40FFFFFF);
+        track.setSize(px(64), px(34));
+        GradientDrawable knob = new GradientDrawable();
+        knob.setShape(GradientDrawable.OVAL);
+        knob.setColor(Color.WHITE);
+        knob.setSize(px(26), px(26));
+        LayerDrawable l = new LayerDrawable(new Drawable[] {track, knob});
+        int edge = px(4), far = px(34);
+        l.setLayerInset(1, on ? far : edge, edge, on ? edge : far, edge);
+        return l;
+    }
+
+    // A small menu under an icon, in the same style as the app menu (dropdown), with an optional
+    // status line at the top (green dot, not selectable), a grey note per entry, and entries that
+    // can't be chosen right now. Kept on screen at the right edge.
+    private void menu(final View anchor, String status, String[] items, String[] subs, boolean[] enabled,
+                      final Boolean[] switches, final Pick pick) {
+        final Dialog d = new Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = px(10), rowH = px(64);
+        box.setPadding(pad, pad, pad, pad);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(px(RADIUS));
+        bg.setColor(0xFF231D1F);
+        bg.setStroke(Math.max(1, px(2)), 0x17FFFFFF);
+        box.setBackground(bg);
+        float widest = px(320);
+        int h = 2 * pad;
+        if (status != null) {
+            TextView s = text(px(24), 0xCCFFFFFF, regular);
+            GradientDrawable dot = new GradientDrawable();
+            dot.setShape(GradientDrawable.OVAL);
+            dot.setColor(0xFF5DCAA5);
+            dot.setSize(px(14), px(14));
+            s.setCompoundDrawablesRelativeWithIntrinsicBounds(dot, null, null, null);
+            s.setCompoundDrawablePadding(px(12));
+            s.setText(status);
+            s.setSingleLine(true);
+            s.setGravity(Gravity.CENTER_VERTICAL);
+            s.setPadding(px(22), 0, px(22), 0);
+            widest = Math.max(widest, s.getPaint().measureText(status) + px(14 + 12) + 2 * px(22) + 2 * pad);
+            box.addView(s, new LinearLayout.LayoutParams(-1, px(52)));
+            h += px(52);
+        }
+        View first = null;
+        for (int i = 0; i < items.length; i++) {
+            final int which = i;
+            final boolean on = enabled[i];
+            final TextView t = text(px(26), on ? 0xD9FFFFFF : 0x66FFFFFF, regular);
+            android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder(items[i]);
+            if (subs[i] != null) {
+                int from = sb.length();
+                sb.append("   ").append(subs[i]);
+                sb.setSpan(new android.text.style.RelativeSizeSpan(0.8f), from, sb.length(), 0);
+                sb.setSpan(new android.text.style.ForegroundColorSpan(0x8CFFFFFF), from, sb.length(), 0);
+            }
+            t.setText(sb);
+            t.setSingleLine(true);
+            t.setGravity(Gravity.CENTER_VERTICAL);
+            t.setPadding(px(22), 0, px(22), 0);
+            final boolean isSwitch = switches != null && switches[i] != null;
+            final boolean[] state = {isSwitch && switches[i]};
+            if (isSwitch) {
+                t.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, switchDrawable(state[0]), null);
+                t.setCompoundDrawablePadding(px(28));
+            }
+            widest = Math.max(widest, t.getPaint().measureText(sb.toString()) + 2 * px(22) + 2 * pad
+                    + (isSwitch ? px(64 + 28) : 0));
+            final GradientDrawable focus = new GradientDrawable();
+            focus.setCornerRadius(px(RADIUS - pad));
+            focus.setColor(Color.TRANSPARENT);
+            t.setBackground(focus);
+            t.setFocusable(on);
+            if (on) {
+                if (first == null) first = t;
+                t.setOnFocusChangeListener((v, has) -> {
+                    focus.setColor(has ? 0x38FFFFFF : Color.TRANSPARENT);
+                    t.setTextColor(has ? Color.WHITE : 0xD9FFFFFF);
+                });
+                t.setOnClickListener(v -> {
+                    if (isSwitch) { // flips in place, the menu stays open
+                        state[0] = !state[0];
+                        t.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, switchDrawable(state[0]), null);
+                    } else {
+                        d.dismiss();
+                    }
+                    pick.at(which);
+                });
+            }
+            box.addView(t, new LinearLayout.LayoutParams(-1, rowH));
+            h += rowH;
+        }
+        d.setContentView(box);
+        if (first != null) first.requestFocus();
+
+        int[] at = new int[2];
+        anchor.getLocationOnScreen(at);
+        int w = (int) Math.ceil(widest);
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int y = at[1] + Math.round(anchor.getHeight() * anchor.getScaleY()) + px(64);
+        Window win = d.getWindow();
+        win.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        win.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        win.setGravity(Gravity.TOP | Gravity.START);
+        android.view.WindowManager.LayoutParams lp = win.getAttributes();
+        lp.x = Math.max(px(24), Math.min(at[0], screenW - w - px(24)));
+        lp.y = y;
+        lp.width = w;
+        lp.height = h;
+        win.setAttributes(lp);
+        // The icon's name would sit right above the menu: hide it while the menu is open.
+        final TextView caption = captionOf.get(anchor);
+        if (caption != null) caption.setVisibility(View.INVISIBLE);
+        d.setOnDismissListener(x -> {
+            if (openMenu == d) openMenu = null;
+            if (caption != null && anchor.isFocused()) caption.setVisibility(View.VISIBLE);
+        });
+        openMenu = d;
+        d.show();
     }
 
     // The name set in Settings > Inputs (like "Bedroom"), else the TV's own name (like "HDMI 1").

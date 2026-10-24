@@ -31,16 +31,43 @@ Echte Bildschirmfotos vom TV in 1080p; auf dem Fernseher selbst sind die Verläu
 Das ausgewählte Symbol zeigt seinen Namen – beim Tailscale-Schild auch, ob das VPN gerade an ist, beim
 Netzwerk „WLAN“, „Ethernet“ oder „Offline“. Der grüne Punkt am Schild heißt: VPN verbunden.
 
-**Auf Fernsehern mit eingebautem Google TV** kommen die HDMI-Eingänge dazu, links neben Play Store –
-aber nur Eingänge, an denen ein Gerät hängt (eingeschaltet oder im Standby). Wird ein Gerät eingesteckt
-oder abgezogen, passt sich die Leiste sofort an. Ausgewählt zeigt jeder Eingang den Namen aus den
-TV-Einstellungen, z. B. „PlayStation 5“.
+
+### Konsolen und andere HDMI-Geräte (LG-Fernseher)
+
+![Symbolleiste mit PS5 und Switch](docs/screenshots/symbolleiste-konsolen.jpg)
+
+Hängt der Streamer an einem **LG-Fernseher (webOS)**, zeigt die Leiste die anderen HDMI-Geräte am
+Fernseher – zwischen zwei Trennstrichen, links neben Play Store. **OK** schaltet den Fernseher auf das
+Gerät um (die PS5 wacht dabei per HDMI-CEC auf), **Home** auf der Google-Fernbedienung bringt dich zurück.
+
+- **Welche Geräte:** alle, die der LG kennt (eingerichtet, umbenannt oder per CEC gesehen) oder die gerade
+  an sind. Automatisch weggelassen: der Eingang des Streamers selbst (erkannt an seinem Gerätenamen,
+  also auch nach dem Umstecken) und Soundbars am ARC-Anschluss. Vergisst der LG ein Gerät, verschwindet
+  es auch hier; steckt ein anderes Gerät im Port, übernimmt die Leiste dessen Namen.
+- **Symbol:** Controller für Geräte, die der LG als Spielkonsole führt, sonst ein HDMI-Stecker.
+  **Name** beim Auswählen: der Name aus dem LG, z. B. „PS5 Spielkonsole“.
+- **Oranger Punkt:** das Gerät meldet sich als „an“. Der LG unterscheidet dabei nicht zwischen „läuft“ und
+  „Ruhemodus“ – nach dem Wechsel in den Ruhemodus zeigt er ein Gerät oft noch einige Minuten als „an“.
+  In dieser Zeit weckt das Umschalten es nicht; dann einfach die PS-Taste am Controller drücken.
+  Komplett ausgeschaltete Geräte haben keinen Punkt.
+
+**Einrichten:** Auf dem Startbildschirm das **Zahnrad auswählen und OK gedrückt halten** (oder die
+Menü-Taste) → **Fernseher verbinden** → am LG mit der LG-Fernbedienung **Zulassen**. Mit Claude Code geht es
+auch per `sh tvctl.sh lg-pair <IP>`. Im selben Menü: Gerätestatus (oranger Punkt) ein/aus, Trennen.
+
+![Menü am Zahnrad](docs/screenshots/menue-fernsehgeraet.jpg)
+
+<sub>Getestet mit einem LG OLED65C4 (2024) und PS5 / Nintendo Switch. Der Startbildschirm spricht nur im
+Heimnetz mit dem LG und nur, solange er sichtbar ist; nichts geht ins Internet. Falls der LG nicht gefunden
+wird: Streamer und LG im selben Netz, am LG „LG Connect Apps“ bzw. „Mobile TV On“ einschalten. Andere
+Fernseher-Marken zeigen keine Geräte in der Leiste.</sub>
+
+**Auf Fernsehern mit eingebautem Google TV** (statt eines Streamers) zeigt die Leiste die HDMI-Eingänge des
+Fernsehers selbst, an denen ein Gerät hängt – ohne Punkt, weil Android dort keinen Gerätestatus liefert.
 
 ![Mockup: Symbolleiste mit HDMI-Eingängen](docs/screenshots/symbolleiste-hdmi.svg)
 
-<sub>Mockup – der Google TV Streamer, auf dem das Projekt entstanden ist, hat selbst keine HDMI-Eingänge,
-deshalb ist dieser Teil noch auf keinem echten Fernseher getestet. Ob ein Eingang als „belegt“ gilt,
-meldet die Software des TV-Herstellers; kann sie das nicht, erscheinen einfach alle Eingänge.
+<sub>Mockup – dieser Teil ist noch auf keinem Fernseher mit eingebautem Google TV getestet.
 Zum Ausprobieren: `mockups/symbolleiste-hdmi.html` im Browser öffnen.</sub>
 
 ### Bildschirmschoner „Glühwürmchen“
@@ -102,9 +129,10 @@ damit sich alles rückgängig machen lässt.
 | Teil | Was es macht |
 |---|---|
 | **Aufräumen** | Schaltet Werbung, Empfehlungen, Play Filme und den Google-Bildschirmschoner aus. Nur *ausschalten*, nichts wird gelöscht. Animationen aus. |
-| **Startbildschirm** | Begrüßung, Datum, große Uhr. Eine Reihe App-Kacheln. Oben rechts kleine Symbole (Tailscale-VPN mit Statuspunkt, WLAN, Play Store, Einstellungen, App hinzufügen). Hintergrund-Farbverlauf nach Tageszeit, ohne Farbstufen; wechselt sanft (2 s Überblendung) oder wird im Hintergrund vorbereitet, während eine andere App läuft. Home/Zurück springt zur ersten App; Links/Rechts gehen die Apps der Reihe nach durch (über Zeilen hinweg) und von der letzten wieder zur ersten. Basiert auf [tv-detox](https://github.com/Ansub/tv-detox) (MIT), stark angepasst. |
+| **Startbildschirm** | Begrüßung, Datum, große Uhr. Eine Reihe App-Kacheln. Oben rechts kleine Symbole (Tailscale-VPN mit Statuspunkt, WLAN, Play Store, Einstellungen, App hinzufügen). Hintergrund-Farbverlauf nach Tageszeit, ohne Farbstufen; wechselt sanft (2 s Überblendung) oder wird im Hintergrund vorbereitet, während eine andere App läuft. Home/Zurück springt zur ersten App; Links/Rechts gehen die Apps der Reihe nach durch (über Zeilen hinweg) und von der letzten wieder zur ersten. Am LG-Fernseher: Konsolen und andere HDMI-Geräte in der Leiste, OK schaltet um. Basiert auf [tv-detox](https://github.com/Ansub/tv-detox) (MIT), stark angepasst. |
 | **Bildschirmschoner „Glühwürmchen“** | 7 weiche Lichter schweben langsam in der Bildmitte. 5–17 Uhr bunt, 17–5 Uhr warm. OpenGL-Shader in echtem 4K, 30 Bilder/s, ~6–9 % eines CPU-Kerns. Nichts berührt den Rand (gut mit Hue-Ambilight). |
 | **Fernbedienungs-Tasten** | YouTube-Taste öffnet YouTube, Netflix-Taste öffnet Wholphin. Kleine Helfer-App als Bedienungshilfe, ohne Internetzugriff. |
+| **LG-Fernseher** (optional) | Zahnrad auswählen, OK halten → „Fernseher verbinden“: HDMI-Geräte wie PS5 oder Switch erscheinen oben rechts, OK schaltet den Fernseher um. |
 | **Zeiten** | Bildschirmschoner nach 3 Min., Ruhezustand nach 30 Min. ohne Tastendruck. |
 
 Ergebnis auf meinem TV: freier Speicher von ~1,55 GB auf ~2,06 GB, Startbildschirm ~65–77 MB statt

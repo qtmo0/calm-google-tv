@@ -22,6 +22,8 @@
 #   times       <IP> [schoner_min] [ruhe_min]   Standard 3 und 30
 #   animations  <IP> off|on
 #   remote-keys <IP>                      YouTube->YouTube, Netflix->Wholphin (Bedienungshilfe)
+#   lg-pair     <IP>                      Startbildschirm mit einem LG-Fernseher (webOS) koppeln: HDMI-Geräte
+#                                         in der Leiste, Umschalten per OK. Der LG fragt einmal "Zulassen?"
 #   reboot      <IP>                      30 s warten, neu starten, Start prüfen
 #   undo        <IP>                      alles laut Sicherung zurück
 set -e
@@ -195,6 +197,33 @@ remote-keys)
   tv settings put secure accessibility_enabled 1
   log "Fernbedienungs-Tasten (YouTube->YouTube, Netflix->Wholphin) als Bedienungshilfe" "adb shell settings put secure enabled_accessibility_services $old && adb uninstall io.github.qtmo0.calmtv.remotekeys"
   echo "Aktiv: $(tv dumpsys accessibility | grep -c 'Fernbedienungs-Tasten') Dienst(e). Mit der echten Fernbedienung testen – simulierte Tasten (adb input) erreichen den Dienst nicht."
+  ;;
+
+lg-pair)
+  need_backup
+  tv pm list packages com.ansub.tvhome | grep -q com.ansub.tvhome || { echo "Erst den Startbildschirm installieren (home)." >&2; exit 1; }
+  adb -s "$TV" logcat -c
+  tv input keyevent KEYCODE_HOME
+  sleep 6   # der Startbildschirm sucht den LG im Netz
+  tv am broadcast -a com.ansub.tvhome.LG_PAIR >/dev/null
+  echo "Am LG-Fernseher erscheint gleich \"Calm Google TV möchte sich verbinden\" – mit der LG-Fernbedienung Zulassen drücken (90 s Zeit)."
+  i=0; result=
+  while [ $i -lt 50 ]; do
+    out=$(adb -s "$TV" logcat -d -s tvhome-lg | tr -d '\r')
+    case "$out" in
+      *"pairing: registered"*) result=ok; break ;;
+      *"pairing refused"*|*"no LG TV found"*) result=fail; break ;;
+    esac
+    i=$((i + 1)); sleep 2
+  done
+  if [ "$result" = ok ]; then
+    echo "Gekoppelt. HDMI-Geräte erscheinen in der Leiste oben rechts."
+    log "Startbildschirm mit LG-Fernseher gekoppelt (HDMI-Geräte in der Leiste)" "Am TV: OK auf dem Zahnrad halten -> Trennen (und im LG-Menü den Eintrag \"Calm Google TV\" löschen)"
+  else
+    echo "Nicht gekoppelt. Log:"; adb -s "$TV" logcat -d -s tvhome-lg | tail -5
+    echo "Kein LG gefunden? TV und Streamer im selben Netz? Am LG \"LG Connect Apps\" bzw. \"Mobile TV On\" einschalten." >&2
+    exit 1
+  fi
   ;;
 
 reboot)
