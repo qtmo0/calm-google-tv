@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Symbolleiste mit HDMI</title>
+<!--
+  Interaktives Mockup der Symbolleiste oben rechts auf einem Fernseher mit eingebautem Google TV.
+  So verhält sich der echte Startbildschirm (source/homescreen, buildTiles/hdmiInputs):
+  - Reihenfolge: Tailscale, Netzwerk | HDMI-Eingänge, Play Store, Einstellungen, App hinzufügen
+  - Nur HDMI-Eingänge mit angeschlossenem Gerät (verbunden oder Standby) erscheinen; Android meldet
+    Änderungen live (TvInputManager.TvInputCallback).
+  - Das ausgewählte Symbol zeigt seinen Namen; bei HDMI den Namen aus den TV-Einstellungen.
+  Bedienung: ins Bild klicken, dann ← →; unten den Zustand der Eingänge ändern.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #111; color: #ddd; font: 14px system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 16px; }
+  .tv { position: relative; width: min(100%, 1280px); aspect-ratio: 16/9; border-radius: 12px; overflow: hidden;
+        container-type: inline-size; outline: none; color: #fff; font-family: Roboto, system-ui, sans-serif;
+        background: radial-gradient(70% 120% at 15% 0%, rgba(230,150,180,.18), transparent 70%),
+                    linear-gradient(to bottom right, #171430, #32213F, #52293C); }
+  .bar { position: absolute; right: calc(80*100cqw/1920); top: calc(76*100cqw/1920); display: flex;
+         align-items: flex-start; gap: calc(12*100cqw/1920); }
+  .ic { position: relative; width: calc(72*100cqw/1920); height: calc(72*100cqw/1920); border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform .14s; }
+  .ic svg { width: calc(40*100cqw/1920); height: calc(40*100cqw/1920); }
+  .ic.f { background: rgba(255,255,255,.22); transform: scale(1.1); }
+  .lbl { position: absolute; top: calc(84*100cqw/1920); left: 50%; transform: translateX(-50%); white-space: nowrap;
+         font-size: calc(24*100cqw/1920); visibility: hidden; }
+  .ic.f .lbl { visibility: visible; }
+  .ic:last-child .lbl { left: auto; right: 0; transform: none; }
+  .sep { width: 2px; height: calc(36*100cqw/1920); margin: calc(18*100cqw/1920) calc(12*100cqw/1920) 0;
+         background: rgba(255,255,255,.2); }
+  .dot { position: absolute; width: calc(14*100cqw/1920); height: calc(14*100cqw/1920); border-radius: 50%;
+         background: #5DCAA5; left: calc(47*100cqw/1920); top: calc(47*100cqw/1920); }
+  .clock { position: absolute; left: calc(96*100cqw/1920); top: calc(72*100cqw/1920); }
+  .row { position: absolute; left: calc(96*100cqw/1920); right: calc(96*100cqw/1920); top: calc(604*100cqw/1920);
+         display: flex; gap: calc(36*100cqw/1920); }
+  .tile { flex: 1; aspect-ratio: 16/9; border-radius: calc(22*100cqw/1920); display: flex; align-items: center;
+          justify-content: center; font-weight: 500; font-size: calc(34*100cqw/1920); }
+  .ports { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; width: min(100%, 1280px); }
+  .port { background: #1d1d1d; border: 1px solid #333; border-radius: 8px; padding: 8px 10px; }
+  .port select { width: 100%; margin-top: 6px; background: #222; color: #ddd; border: 1px solid #444; border-radius: 6px; padding: 4px; }
+  .muted { color: #888; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="tv" id="tv" tabindex="0">
+  <div class="clock">
+    <div style="font-size:calc(34*100cqw/1920);color:rgba(255,255,255,.72)">Guten Abend</div>
+    <div style="font-size:calc(30*100cqw/1920);color:rgba(255,255,255,.66)">Samstag, 24. Oktober</div>
+    <div style="font-size:calc(164*100cqw/1920);line-height:1;letter-spacing:-.02em">22:19</div>
+  </div>
+  <div class="bar" id="bar"></div>
+  <div class="row">
+    <div class="tile" style="background:#0b1030;color:#c9b8ff">Wholphin</div>
+    <div class="tile" style="background:#f4f4f4;color:#e62117">YouTube</div>
+    <div class="tile" style="background:#000">ZATTOO</div>
+    <div class="tile" style="background:#0a3482">ARD</div>
+    <div class="tile" style="background:#151b24;color:#ff8a1f">ZDF</div>
+    <div class="tile" style="background:#1a8cff">prime video</div>
+  </div>
+</div>
+<div class="ports" id="ports"></div>
+<div class="muted">Ins Bild klicken, dann ← → wie auf der Fernbedienung, oder ein Symbol anklicken. Oben den Zustand jedes Eingangs ändern.</div>
+<script>
+const P = {
+  shield: '<path d="M120 35 190 62 190 118 172 162 120 205 68 162 50 118 50 62Z M92 122 112 142 150 102"/>',
+  wifi: '<path d="M24.5 99.5A135 135 0 0 1 215.5 99.5M55 130A92 92 0 0 1 185 130M84.6 159.6A50 50 0 0 1 155.4 159.6"/><circle cx="120" cy="195" r="4"/>',
+  play: '<path d="M60 45 60 195 190 120Z"/>',
+  hdmi: '<path d="M30 90H210V130L185 160H55L30 130Z M80 120H160"/>',
+  set: '<path d="M40 70h100M180 70h20M40 170h20M100 170h100"/><circle cx="160" cy="70" r="20"/><circle cx="80" cy="170" r="20"/>',
+  plus: '<path d="M120 50v140M50 120h140"/>'
+};
+const PORTS = [{name:'PlayStation 5', s:'on'}, {name:'Nintendo Switch', s:'standby'}, {name:'HDMI 3', s:'off'}, {name:'Soundbar', s:'on'}];
+const STATES = {on:'Verbunden', standby:'Standby (Gerät im Ruhemodus)', off:'Getrennt → ausgeblendet'};
+let f = 2;
+const svg = k => `<svg viewBox="0 0 240 240" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">${P[k]}</svg>`;
+function items() {
+  const a = [{k:'shield', name:'Tailscale: VPN an', dot:1}, {k:'wifi', name:'WLAN'}, {sep:1}];
+  PORTS.forEach(p => { if (p.s !== 'off') a.push({k:'hdmi', name:p.name}); });
+  a.push({k:'play', name:'Play Store'}, {k:'set', name:'Einstellungen'}, {k:'plus', name:'App hinzufügen'});
+  return a;
+}
+function render() {
+  const bar = document.getElementById('bar'); bar.innerHTML = '';
+  const list = items(), n = list.filter(x => !x.sep).length;
+  f = Math.max(0, Math.min(f, n - 1));
+  let idx = 0;
+  list.forEach(it => {
+    if (it.sep) { const s = document.createElement('div'); s.className = 'sep'; bar.appendChild(s); return; }
+    const d = document.createElement('div'); d.className = 'ic' + (idx === f ? ' f' : ''); d.innerHTML = svg(it.k);
+    const my = idx; d.onclick = () => { f = my; render(); document.getElementById('tv').focus(); };
+    if (it.dot) { const o = document.createElement('span'); o.className = 'dot'; d.appendChild(o); }
+    const l = document.createElement('span'); l.className = 'lbl'; l.textContent = it.name; d.appendChild(l);
+    bar.appendChild(d); idx++;
+  });
+}
+function ports() {
+  const el = document.getElementById('ports'); el.innerHTML = '';
+  PORTS.forEach((p, i) => {
+    const c = document.createElement('div'); c.className = 'port'; c.textContent = `HDMI ${i + 1}: ${p.name}`;
+    const s = document.createElement('select');
+    Object.entries(STATES).forEach(([k, v]) => { const o = document.createElement('option'); o.value = k; o.textContent = v; o.selected = k === p.s; s.appendChild(o); });
+    s.onchange = () => { p.s = s.value; render(); };
+    c.appendChild(s); el.appendChild(c);
+  });
+}
+document.getElementById('tv').onkeydown = e => {
+  const n = items().filter(x => !x.sep).length;
+  if (e.key === 'ArrowRight') f = Math.min(n - 1, f + 1);
+  else if (e.key === 'ArrowLeft') f = Math.max(0, f - 1);
+  else return;
+  e.preventDefault(); render();
+};
+ports(); render();
+</script>
+</body>
+</html>

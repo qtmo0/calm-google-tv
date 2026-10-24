@@ -24,6 +24,25 @@ Auf anderen Google-TV-Geräten sollte das meiste genauso funktionieren (siehe �
 <sub>Für die Fotos wurde die Tageszeit per Testschalter umgestellt, deshalb zeigt die Uhr überall dieselbe Zeit.
 Echte Bildschirmfotos vom TV in 1080p; auf dem Fernseher selbst sind die Verläufe noch weicher.</sub>
 
+### Symbolleiste oben rechts
+
+![Symbolleiste mit Beschriftung beim Auswählen](docs/screenshots/symbolleiste-beschriftung.jpg)
+
+Das ausgewählte Symbol zeigt seinen Namen – beim Tailscale-Schild auch, ob das VPN gerade an ist, beim
+Netzwerk „WLAN“, „Ethernet“ oder „Offline“. Der grüne Punkt am Schild heißt: VPN verbunden.
+
+**Auf Fernsehern mit eingebautem Google TV** kommen die HDMI-Eingänge dazu, links neben Play Store –
+aber nur Eingänge, an denen ein Gerät hängt (eingeschaltet oder im Standby). Wird ein Gerät eingesteckt
+oder abgezogen, passt sich die Leiste sofort an. Ausgewählt zeigt jeder Eingang den Namen aus den
+TV-Einstellungen, z. B. „PlayStation 5“.
+
+![Mockup: Symbolleiste mit HDMI-Eingängen](docs/screenshots/symbolleiste-hdmi.svg)
+
+<sub>Mockup – der Google TV Streamer, auf dem das Projekt entstanden ist, hat selbst keine HDMI-Eingänge,
+deshalb ist dieser Teil noch auf keinem echten Fernseher getestet. Ob ein Eingang als „belegt“ gilt,
+meldet die Software des TV-Herstellers; kann sie das nicht, erscheinen einfach alle Eingänge.
+Zum Ausprobieren: `mockups/symbolleiste-hdmi.html` im Browser öffnen.</sub>
+
 ### Bildschirmschoner „Glühwürmchen“
 
 ![Bildschirmschoner Glühwürmchen, warme Farben am Abend](docs/screenshots/bildschirmschoner-gluehwuermchen.jpg)
@@ -103,7 +122,7 @@ apk/                Fertig gebaute Apps – zum Einrichten reicht adb
 source/homescreen/  Startbildschirm (aus tv-detox weiterentwickelt), Java, ohne Gradle
 source/screensaver/ Bildschirmschoner „Glühwürmchen“ (OpenGL ES 2.0 DreamService)
 source/remote-keys/ Fernbedienungs-Tasten (AccessibilityService)
-mockups/            HTML-Entwürfe: Startbildschirm, Bildschirmschoner (gleicher Shader wie auf dem TV)
+mockups/            HTML-Entwürfe: Startbildschirm, Symbolleiste mit HDMI, Bildschirmschoner (gleicher Shader)
 docs/screenshots/   Bildschirmfotos vom TV für diese README
 tvs/<modell>_<sn>/  Pro TV: backup.txt (Ausgangszustand) und changes.md (jede Änderung + Rückgängig)
 ```

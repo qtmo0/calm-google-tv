@@ -101,6 +101,8 @@ public class MainActivity extends Activity {
     private FrameLayout root; // the page, inside a vertical scroller
     private int tileW, tileH, gridTop; // app grid geometry, set by buildTiles
     private final List<View> tiles = new ArrayList<>();
+    private final List<View> iconCaptions = new ArrayList<>(); // bar captions and divider, rebuilt with the tiles
+    private final java.util.Map<View, TextView> captionOf = new java.util.HashMap<>();
     private boolean dirty = true;
     private java.util.Locale shownLocale; // the TV's language (and region) when the page was built
     private String focusedKey;
@@ -214,6 +216,8 @@ public class MainActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= 33)
             registerReceiver(testPhase, tf, android.Manifest.permission.DUMP, null, Context.RECEIVER_EXPORTED);
         else registerReceiver(testPhase, tf, android.Manifest.permission.DUMP, null);
+        TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+        if (tim != null) try { tim.registerCallback(inputsChanged, handler); } catch (Exception ignored) {}
 
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try {
@@ -231,6 +235,8 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         unregisterReceiver(packagesChanged);
         unregisterReceiver(testPhase);
+        TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+        if (tim != null) try { tim.unregisterCallback(inputsChanged); } catch (Exception ignored) {}
         handler.removeCallbacksAndMessages(null);
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try { cm.unregisterNetworkCallback(networkChanged); } catch (Exception ignored) {}
@@ -320,6 +326,9 @@ public class MainActivity extends Activity {
         }
         refreshNetwork();
         refreshVpn();
+        // Tailscale sets the VPN up or tears it down a moment after you leave its app: look again.
+        handler.postDelayed(this::refreshVpn, 1000);
+        handler.postDelayed(this::refreshVpn, 3000);
         // Coming back: if the hour was missed (device asleep), show the right colours straight away.
         applyPhase(false);
         resumed = true;
@@ -506,6 +515,9 @@ public class MainActivity extends Activity {
             View wrap = (View) t.getParent();
             ((ViewGroup) wrap.getParent()).removeView(wrap);
         }
+        for (View v : iconCaptions) root.removeView(v);
+        iconCaptions.clear();
+        captionOf.clear();
         tiles.clear();
         rowApps.clear();
         movingKey = null;
@@ -548,7 +560,7 @@ public class MainActivity extends Activity {
         }
 
         // Plain icons at the top right, level with the greeting, in two groups split by a thin line:
-        // status (settings shortcuts, Tailscale, network), then actions (Play Store, HDMI inputs,
+        // status (settings shortcuts, Tailscale, network), then actions (HDMI inputs, Play Store,
         // Settings, Add app). Added last, so the first app keeps first focus; Up from the apps reaches them.
         boolean vpn = launchIntent(pm, TAILSCALE) != null;
         // The bar stays the same whatever is in the app row (also when Play Store is a tile there too).
@@ -588,14 +600,16 @@ public class MainActivity extends Activity {
         View line = new View(this);
         line.setBackgroundColor(0x33FFFFFF);
         root.addView(line, at(qx - ig + (split + ig) / 2 - 1, px(ICON_TOP) + ib / 2 - px(18), Math.max(1, px(2)), px(36)));
+        iconCaptions.add(line);
         qx += split;
 
-        if (store) {
-            addIcon(PLAY_STORE, "Play Store", new LineIcon(LineIcon.PLAY), qx);
-            qx += ib + ig;
-        }
+        // HDMI inputs first, left of Play Store (only those with a device plugged in, see hdmiInputs).
         for (TvInputInfo in : inputs) {
             addIcon(in.getId(), inputLabel(in), new LineIcon(LineIcon.HDMI), qx);
+            qx += ib + ig;
+        }
+        if (store) {
+            addIcon(PLAY_STORE, "Play Store", new LineIcon(LineIcon.PLAY), qx);
             qx += ib + ig;
         }
         addIcon(SETTINGS, Strings.t("Settings"), new LineIcon(LineIcon.SETTINGS), qx);
@@ -741,10 +755,20 @@ public class MainActivity extends Activity {
         card.setFocusable(true);
         card.setTag(key);
         card.setContentDescription(label);
+        // Its name shows underneath while focused, like the app tiles. The text is read from the content
+        // description at that moment, so live states (Wi-Fi/Ethernet/Offline, VPN on/off) are current.
+        // Centred under the icon, but kept on screen at the right edge.
+        final TextView caption = text(px(24), Color.WHITE, regular);
+        caption.setSingleLine(true);
+        caption.setVisibility(View.INVISIBLE);
+        root.addView(caption, at(0, px(ICON_TOP) + b + px(10), -2, -2));
+        captionOf.put(card, caption);
         card.setOnFocusChangeListener((v, has) -> {
             if (has) focusedKey = key;
             bg.setColor(has ? 0x38FFFFFF : Color.TRANSPARENT);
             v.animate().scaleX(has ? 1.1f : 1f).scaleY(has ? 1.1f : 1f).setDuration(140).withLayer().start();
+            if (has) updateCaption(v);
+            caption.setVisibility(has ? View.VISIBLE : View.INVISIBLE);
         });
         card.setOnClickListener(v -> open(key));
         FrameLayout wrap = new FrameLayout(this);
@@ -752,7 +776,23 @@ public class MainActivity extends Activity {
         wrap.addView(card, new FrameLayout.LayoutParams(b, b));
         root.addView(wrap, at(x, px(ICON_TOP), b, b));
         tiles.add(card);
+        iconCaptions.add(caption);
         return iv;
+    }
+
+    // Puts the icon's current name under it, centred, but kept on screen at the right edge. Called on
+    // focus and whenever a live state (network, VPN) changes while the icon is focused.
+    private void updateCaption(View card) {
+        TextView caption = captionOf.get(card);
+        if (caption == null) return;
+        CharSequence name = card.getContentDescription();
+        caption.setText(name);
+        int b = px(ICON_BUTTON), screenW = getResources().getDisplayMetrics().widthPixels;
+        int center = ((FrameLayout.LayoutParams) ((View) card.getParent()).getLayoutParams()).leftMargin + b / 2;
+        int tw = (int) Math.ceil(caption.getPaint().measureText(name == null ? "" : name.toString()));
+        ((FrameLayout.LayoutParams) caption.getLayoutParams()).leftMargin =
+                Math.max(px(24), Math.min(center - tw / 2, screenW - px(24) - tw));
+        caption.requestLayout();
     }
 
     private void open(String key) {
@@ -866,7 +906,10 @@ public class MainActivity extends Activity {
             netIcon.setImageDrawable(new LayerDrawable(new Drawable[] {fan, new LineIcon(top)}));
         }
         ((View) netIcon.getParent()).setContentDescription(
-                state == OFFLINE ? Strings.t("Offline") : state == ETHERNET ? "Ethernet" : "Wi-Fi");
+                state == OFFLINE ? Strings.t("Offline") : state == ETHERNET ? "Ethernet"
+                        : "de".equals(java.util.Locale.getDefault().getLanguage()) ? "WLAN" : "Wi-Fi");
+        View netCard = (View) netIcon.getParent();
+        if (netCard.isFocused()) updateCaption(netCard);
     }
 
     // Shows the green dot on the Tailscale icon while a VPN is connected.
@@ -882,7 +925,9 @@ public class MainActivity extends Activity {
             }
         } catch (Exception ignored) {}
         vpnDot.setVisibility(up ? View.VISIBLE : View.INVISIBLE);
-        ((View) vpnDot.getParent()).setContentDescription(up ? "Tailscale: VPN an" : "Tailscale: VPN aus");
+        View card = (View) vpnDot.getParent();
+        card.setContentDescription(up ? "Tailscale: VPN an" : "Tailscale: VPN aus");
+        if (card.isFocused()) updateCaption(card);
     }
 
     // Wi-Fi settings (on Android TV that page lists Ethernet too), else the TV's network page, else Settings.
@@ -1204,10 +1249,35 @@ public class MainActivity extends Activity {
         TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
         if (tim == null) return out;
         for (TvInputInfo in : tim.getTvInputList()) {
-            if (in.getType() == TvInputInfo.TYPE_HDMI && in.getParentId() == null && !in.isHidden(this)) out.add(in);
+            if (in.getType() == TvInputInfo.TYPE_HDMI && in.getParentId() == null && !in.isHidden(this)
+                    && hdmiActive(tim, in)) out.add(in);
         }
         Collections.sort(out, (a, b) -> a.getId().compareTo(b.getId()));
         return out.size() > MAX_INPUTS ? out.subList(0, MAX_INPUTS) : out;
+    }
+
+    // Only inputs with a device plugged in: connected, or in standby (a console in rest mode can usually
+    // be woken over HDMI-CEC). How well this works depends on the TV maker's input service; one that
+    // can't tell reports "connected", so then every input shows, as before. If asking fails, show it.
+    private static boolean hdmiActive(TvInputManager tim, TvInputInfo in) {
+        try {
+            return tim.getInputState(in.getId()) != TvInputManager.INPUT_STATE_DISCONNECTED;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    // Plugging a device in or out (or switching it fully off) changes the bar live.
+    private final TvInputManager.TvInputCallback inputsChanged = new TvInputManager.TvInputCallback() {
+        @Override public void onInputStateChanged(String id, int state) { inputsChanged(); }
+        @Override public void onInputAdded(String id) { inputsChanged(); }
+        @Override public void onInputRemoved(String id) { inputsChanged(); }
+        @Override public void onInputUpdated(String id) { inputsChanged(); }
+    };
+
+    private void inputsChanged() {
+        dirty = true;
+        refreshApps(); // rebuilds now if Home is in front, else on the way back
     }
 
     // The name set in Settings > Inputs (like "Bedroom"), else the TV's own name (like "HDMI 1").

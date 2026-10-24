@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img">
+  <title>Symbolleiste mit HDMI-Eingängen (Mockup)</title>
+  <desc>Mockup der Symbolleiste oben rechts auf einem Fernseher mit integriertem Google TV: Tailscale, WLAN, Trennstrich, drei HDMI-Eingänge mit angeschlossenen Geräten, Play Store, Einstellungen, App hinzufügen. Der erste HDMI-Eingang ist ausgewählt und zeigt darunter seinen Namen PlayStation 5. Ein vierter Eingang ohne Gerät ist ausgeblendet.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171430"/><stop offset=".5" stop-color="#32213F"/><stop offset="1" stop-color="#52293C"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".15" cy="0" r=".8">
+      <stop offset="0" stop-color="#E696B4" stop-opacity=".18"/><stop offset="1" stop-color="#E696B4" stop-opacity="0"/>
+    </radialGradient>
+    <g id="shield" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M120 35 190 62 190 118 172 162 120 205 68 162 50 118 50 62Z M92 122 112 142 150 102"/></g>
+    <g id="wifi" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round"><path d="M24.5 99.5A135 135 0 0 1 215.5 99.5M55 130A92 92 0 0 1 185 130M84.6 159.6A50 50 0 0 1 155.4 159.6"/><circle cx="120" cy="195" r="4"/></g>
+    <g id="hdmi" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"><path d="M30 90H210V130L185 160H55L30 130Z M80 120H160"/></g>
+    <g id="play" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linejoin="round"><path d="M60 45 60 195 190 120Z"/></g>
+    <g id="set" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round"><path d="M40 70h100M180 70h20M40 170h20M100 170h100"/><circle cx="160" cy="70" r="20"/><circle cx="80" cy="170" r="20"/></g>
+    <g id="plus" fill="none" stroke="#fff" stroke-opacity=".92" stroke-width="16" stroke-linecap="round"><path d="M120 50v140M50 120h140"/></g>
+  </defs>
+
+  <rect width="960" height="300" rx="14" fill="url(#bg)"/>
+  <rect width="960" height="300" rx="14" fill="url(#glow)"/>
+
+  <!-- Symbole: 36 px Kreise, 42 px Abstand (Design-Raster 72/12 halbiert) -->
+  <g transform="translate(372,60)">
+    <g transform="translate(8,8) scale(.0833)"><use href="#shield"/></g><circle cx="27" cy="27" r="3.5" fill="#5DCAA5"/>
+    <g transform="translate(50,8) scale(.0833)"><use href="#wifi"/></g>
+    <rect x="92" y="9" width="1.5" height="18" fill="#fff" fill-opacity=".22"/>
+    <circle cx="124" cy="18" r="20" fill="#fff" fill-opacity=".22"/>
+    <g transform="translate(112,6) scale(.1)"><use href="#hdmi"/></g>
+    <g transform="translate(150,8) scale(.0833)"><use href="#hdmi"/></g>
+    <g transform="translate(192,8) scale(.0833)"><use href="#hdmi"/></g>
+    <g transform="translate(234,8) scale(.0833)"><use href="#play"/></g>
+    <g transform="translate(276,8) scale(.0833)"><use href="#set"/></g>
+    <g transform="translate(318,8) scale(.0833)"><use href="#plus"/></g>
+    <text x="124" y="64" text-anchor="middle" font-family="Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#fff">PlayStation 5</text>
+  </g>
+
+  <!-- Erklaerungen -->
+  <g font-family="Roboto, Helvetica, Arial, sans-serif" fill="#fff">
+    <text x="40" y="196" font-size="15" fill-opacity=".9">HDMI-Eingänge links neben Play Store – nur Eingänge mit angeschlossenem Gerät</text>
+    <text x="40" y="218" font-size="13" fill-opacity=".7">(eingeschaltet oder im Standby). Ein Eingang ohne Gerät verschwindet, die Leiste rückt zusammen.</text>
+    <text x="40" y="250" font-size="13" fill-opacity=".7">Das ausgewählte Symbol zeigt seinen Namen – bei HDMI den Namen aus den TV-Einstellungen.</text>
+    <text x="40" y="282" font-size="11" fill-opacity=".45">Mockup · auf Fernsehern mit eingebautem Google TV</text>
+  </g>
+</svg>
