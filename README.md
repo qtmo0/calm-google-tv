@@ -11,6 +11,26 @@ oder mit einem Skript – und alles lässt sich wieder rückgängig machen. Nich
 Entwickelt und getestet auf einem **Google TV Streamer (Android 14)** an einem **LG-OLED (4K)**.
 Auf anderen Google-TV-Geräten sollte das meiste genauso funktionieren (siehe „Andere Geräte“).
 
+![Startbildschirm am Abend](docs/screenshots/startbildschirm-abend.jpg)
+
+### Der Hintergrund folgt der Tageszeit
+
+| Morgen (5–11 Uhr) | Tag (11–17 Uhr) |
+|---|---|
+| ![Morgen](docs/screenshots/startbildschirm-morgen.jpg) | ![Tag](docs/screenshots/startbildschirm-tag.jpg) |
+| **Abend (17–22 Uhr)** | **Nacht (22–5 Uhr)** |
+| ![Abend](docs/screenshots/startbildschirm-abend.jpg) | ![Nacht](docs/screenshots/startbildschirm-nacht.jpg) |
+
+<sub>Für die Fotos wurde die Tageszeit per Testschalter umgestellt, deshalb zeigt die Uhr überall dieselbe Zeit.
+Echte Bildschirmfotos vom TV in 1080p; auf dem Fernseher selbst sind die Verläufe noch weicher.</sub>
+
+### Bildschirmschoner „Glühwürmchen“
+
+![Bildschirmschoner Glühwürmchen, warme Farben am Abend](docs/screenshots/bildschirmschoner-gluehwuermchen.jpg)
+
+<sub>Abends und nachts warm, tagsüber bunt. Die Lichter schweben langsam und bleiben in der Bildmitte.
+In Bewegung ausprobieren: `mockups/bildschirmschoner-gluehwuermchen.html` im Browser öffnen.</sub>
+
 ## Schnellstart: ein Prompt, Claude macht den Rest
 
 1. Am Fernseher den Entwicklermodus einschalten (siehe [Schritt 2](#2-am-fernseher-entwicklermodus-einmalig-2-min)) –
@@ -84,6 +104,7 @@ source/homescreen/  Startbildschirm (aus tv-detox weiterentwickelt), Java, ohne 
 source/screensaver/ Bildschirmschoner „Glühwürmchen“ (OpenGL ES 2.0 DreamService)
 source/remote-keys/ Fernbedienungs-Tasten (AccessibilityService)
 mockups/            HTML-Entwürfe: Startbildschirm, Bildschirmschoner (gleicher Shader wie auf dem TV)
+docs/screenshots/   Bildschirmfotos vom TV für diese README
 tvs/<modell>_<sn>/  Pro TV: backup.txt (Ausgangszustand) und changes.md (jede Änderung + Rückgängig)
 ```
 
