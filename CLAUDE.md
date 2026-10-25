@@ -57,7 +57,8 @@ automatisch als Schild oben rechts, wenn es installiert ist.
 Beispiel (Liste des Autors): `com.github.damontecres.wholphin,com.google.android.youtube.tv,com.zattoo.player,de.swr.avp.ard.tv,com.zdf.android.mediathek,com.amazon.amazonvideo.livingroom`
 
 **Fernbedienungs-Tasten:** Die fertige App legt YouTube-Taste → YouTube und Netflix-Taste → **Wholphin** (ein
-Jellyfin-Client), Stern-Taste (`MACRO_1`) → Zattoo. Die Stern-Taste kommt nur an, wenn in den Einstellungen
+Jellyfin-Client), Stern-Taste (`MACRO_1`) → Zattoo, direkt im Reiter Programm
+(App-Link `https://zattoo.com/guide`; klappt der nicht, startet Zattoo normal). Die Stern-Taste kommt nur an, wenn in den Einstellungen
 der Fernbedienung die Eingangsumschaltung per Infrarot dafür aus ist; sonst geht sie direkt an den Fernseher. Das vorher sagen. Will der Nutzer ein anderes Ziel für die Netflix-Taste (oder hat er Netflix
 und will die Taste behalten), Schritt 6 weglassen oder `targetFor()` in
 `source/remote-keys/src/io/github/qtmo0/calmtv/remotekeys/TastenService.java` ändern und neu bauen (braucht Java + SDK, siehe
