@@ -21,7 +21,7 @@
 #   screensaver <IP>                      Glühwürmchen installieren und setzen
 #   times       <IP> [schoner_min] [ruhe_min]   Standard 3 und 30
 #   animations  <IP> off|on
-#   remote-keys <IP>                      YouTube->YouTube, Netflix->Wholphin (Bedienungshilfe)
+#   remote-keys <IP>                      YouTube->YouTube, Netflix->Wholphin, Stern->Zattoo (Bedienungshilfe)
 #   lg-pair     <IP> [LG_IP]              Startbildschirm mit einem LG-Fernseher (webOS) koppeln: HDMI-Geräte
 #                                         in der Leiste, Umschalten per OK. Der LG fragt einmal "Zulassen?".
 #                                         Bei mehreren LGs im Netz die IP des richtigen LG mitgeben.
@@ -196,7 +196,7 @@ remote-keys)
   case "$old" in null|"") new=io.github.qtmo0.calmtv.remotekeys/.TastenService ;; *io.github.qtmo0.calmtv.remotekeys*) new=$old ;; *) new="$old:io.github.qtmo0.calmtv.remotekeys/.TastenService" ;; esac
   tv settings put secure enabled_accessibility_services "$new"
   tv settings put secure accessibility_enabled 1
-  log "Fernbedienungs-Tasten (YouTube->YouTube, Netflix->Wholphin) als Bedienungshilfe" "adb shell settings put secure enabled_accessibility_services $old && adb uninstall io.github.qtmo0.calmtv.remotekeys"
+  log "Fernbedienungs-Tasten (YouTube->YouTube, Netflix->Wholphin, Stern->Zattoo) als Bedienungshilfe" "adb shell settings put secure enabled_accessibility_services $old && adb uninstall io.github.qtmo0.calmtv.remotekeys"
   echo "Aktiv: $(tv dumpsys accessibility | grep -c 'Fernbedienungs-Tasten') Dienst(e). Mit der echten Fernbedienung testen – simulierte Tasten (adb input) erreichen den Dienst nicht."
   ;;
 

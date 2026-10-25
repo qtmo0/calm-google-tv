@@ -10,7 +10,7 @@ import android.view.accessibility.AccessibilityEvent;
 /**
  * Remaps the Google TV Streamer remote's app buttons.
  *
- * The remote sends BUTTON_3 for YouTube and BUTTON_4 for Netflix (see
+ * The remote sends BUTTON_3 for YouTube, BUTTON_4 for Netflix and MACRO_1 for the star (see
  * /system/usr/keylayout/Vendor_18d1_Product_9451.kl). The system hands those to
  * Google TV's home screen and the Chromecast service as global keys; an
  * accessibility key filter sees them first, so consuming them here wins.
@@ -33,6 +33,7 @@ public class TastenService extends AccessibilityService {
         switch (keyCode) {
             case KeyEvent.KEYCODE_BUTTON_3: return "com.google.android.youtube.tv";
             case KeyEvent.KEYCODE_BUTTON_4: return "com.github.damontecres.wholphin";
+            case KeyEvent.KEYCODE_MACRO_1: return "com.zattoo.player";
             default: return null;
         }
     }
