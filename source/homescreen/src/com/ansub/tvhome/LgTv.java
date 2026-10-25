@@ -47,7 +47,7 @@ final class LgTv {
         boolean on;         // a device is connected and powered
         boolean audio;      // a soundbar or amplifier (ARC/eARC): never a source to switch to
         boolean known;      // the TV knows a device there (set up, seen over CEC, or renamed)
-        boolean game;       // the TV set it up as a game console
+        String kind = "";   // what the TV set it up as: "game", "box", "disc", "pc", or "" (unknown)
         String cecName;     // the name the device gives itself over HDMI-CEC, if it has spoken: "PlayStation 5"
     }
 
@@ -372,6 +372,7 @@ final class LgTv {
             in.id = d.optString("id");
             in.label = d.optString("label", in.id.replace('_', ' '));
             in.on = d.optBoolean("connected");
+            in.kind = kind(d.optString("icon"));
             in.known = in.on || d.optBoolean("modified");
             JSONArray sub = d.optJSONArray("subList");
             for (int j = 0; sub != null && j < sub.length(); j++) {
@@ -387,11 +388,26 @@ final class LgTv {
                 String svc = s.optString("serviceType");
                 if ("audio".equals(svc) || "ARC".equals(s.optString("connectedInput")) || s.optInt("cecpDevType") == 5)
                     in.audio = true;
-                if ("game".equals(svc)) in.game = true;
+                String k = kind(svc);
+                if (!k.isEmpty()) in.kind = k;
             }
             out.add(in);
         }
         return out;
+    }
+
+    // The device type the TV gives an input (its setup's service type, or the name of the icon it uses
+    // for the input, like ".../gameconsole.png"), as one of the kinds the bar has an icon for. Only
+    // "game" (and "audio", see audio) has been seen on a real TV so far; the rest are LG's usual words.
+    static String kind(String s) {
+        if (s == null) return "";
+        s = s.toLowerCase(java.util.Locale.ROOT);
+        if (s.contains("game")) return "game";
+        if (s.contains("settop") || s.contains("set_top") || s.contains("stb") || s.contains("cable")
+                || s.contains("satellite") || s.contains("streaming") || s.contains("iptv") || s.contains("ott")) return "box";
+        if (s.contains("blu") || s.contains("dvd") || s.contains("bd_") || s.equals("bd") || s.contains("player")) return "disc";
+        if (s.contains("pc") || s.contains("computer") || s.contains("laptop") || s.contains("notebook")) return "pc";
+        return "";
     }
 
     // ---- SSAP messages -------------------------------------------------------------------------

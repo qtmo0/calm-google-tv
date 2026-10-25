@@ -608,7 +608,7 @@ public class MainActivity extends Activity {
         List<String[]> inputs = new ArrayList<>();
         if (lg.paired()) {
             if (lgInputs != null) for (LgTv.Input in : lgInputs)
-                inputs.add(new String[] {LG_INPUT + in.id, in.label, in.game ? "game" : "", in.on ? "on" : ""});
+                inputs.add(new String[] {LG_INPUT + in.id, in.label, in.kind, in.on ? "on" : ""});
         } else {
             for (TvInputInfo in : hdmiInputs()) inputs.add(new String[] {in.getId(), inputLabel(in), "", ""});
         }
@@ -639,7 +639,9 @@ public class MainActivity extends Activity {
 
         // HDMI inputs first, left of Play Store, then a second line.
         for (String[] in : inputs) {
-            ImageView iv = addIcon(in[0], in[1], new LineIcon("game".equals(in[2]) ? LineIcon.CONTROLLER : LineIcon.HDMI), qx);
+            int[] icon = "game".equals(in[2]) ? LineIcon.CONTROLLER : "box".equals(in[2]) ? LineIcon.BOX
+                    : "disc".equals(in[2]) ? LineIcon.DISC : "pc".equals(in[2]) ? LineIcon.LAPTOP : LineIcon.HDMI;
+            ImageView iv = addIcon(in[0], in[1], new LineIcon(icon), qx);
             if ("on".equals(in[3])) { // the device reports "on" (or is resting, see DOT_ORANGE)
                 View dot = addDot(iv, DOT_ORANGE);
                 dot.setVisibility(showDeviceDots() ? View.VISIBLE : View.INVISIBLE);
@@ -1406,7 +1408,7 @@ public class MainActivity extends Activity {
                 if (in.id.equals(own) || in.audio) continue;
                 LgTv.Input before = lgLast.get(in.id);
                 boolean wanted = in.known || in.on;
-                if (before != null && (!wanted || (before.game && !in.game) || !before.label.equals(in.label))) {
+                if (before != null && (!wanted || (!before.kind.isEmpty() && in.kind.isEmpty()) || !before.label.equals(in.label))) {
                     if (doubt(in.id) < 2) { // not yet: keep what was shown, but take the live on/off
                         before.on = in.on;
                         in = before;
@@ -1418,7 +1420,7 @@ public class MainActivity extends Activity {
                 if (!wanted) continue;
                 seen.put(in.id, in);
                 show.add(in);
-                sig.append(in.id).append('|').append(in.label).append('|').append(in.on).append('|').append(in.game).append(';');
+                sig.append(in.id).append('|').append(in.label).append('|').append(in.on).append('|').append(in.kind).append(';');
             }
             // An input the TV didn't list at all this time: also only gone after the second time.
             java.util.Set<String> listed = new java.util.HashSet<>();
@@ -1427,7 +1429,7 @@ public class MainActivity extends Activity {
                 if (listed.contains(before.id) || seen.containsKey(before.id) || doubt(before.id) >= 2) continue;
                 seen.put(before.id, before);
                 show.add(before);
-                sig.append(before.id).append('|').append(before.label).append('|').append(before.on).append('|').append(before.game).append(';');
+                sig.append(before.id).append('|').append(before.label).append('|').append(before.on).append('|').append(before.kind).append(';');
             }
             java.util.Collections.sort(show, (a, b) -> a.id.compareTo(b.id));
             lgLast.clear();

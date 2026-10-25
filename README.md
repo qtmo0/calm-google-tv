@@ -44,7 +44,9 @@ Gerät um (die PS5 wacht dabei per HDMI-CEC auf), **Home** auf der Google-Fernbe
   an sind. Automatisch weggelassen: der Eingang des Streamers selbst (erkannt an seinem Gerätenamen,
   also auch nach dem Umstecken) und Soundbars am ARC-Anschluss. Vergisst der LG ein Gerät, verschwindet
   es auch hier; steckt ein anderes Gerät im Port, übernimmt die Leiste dessen Namen.
-- **Symbol:** Controller für Geräte, die der LG als Spielkonsole führt, sonst ein HDMI-Stecker.
+- **Symbol** nach der Geräteart, die der LG meldet: Controller für Spielkonsolen, Box mit Play-Zeichen für
+  Streaming-/Set-Top-Boxen, Scheibe für Blu-ray/DVD, Laptop für PCs, sonst ein HDMI-Stecker.
+  (Getestet sind nur Konsolen; die anderen Arten hängen davon ab, wie der LG sie benennt.)
   **Name** beim Auswählen: der Name aus dem LG, z. B. „PS5 Spielkonsole“.
 - **Oranger Punkt:** das Gerät meldet sich als „an“. Der LG unterscheidet dabei nicht zwischen „läuft“ und
   „Ruhemodus“ – nach dem Wechsel in den Ruhemodus zeigt er ein Gerät oft noch einige Minuten als „an“.

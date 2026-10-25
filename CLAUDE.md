@@ -120,6 +120,9 @@ nicht löschen, `undo` braucht es.
   Soundbars (ARC/`audio`) weg; gezeigt wird, was der LG kennt oder was an ist. Oranger Punkt = LG meldet
   „verbunden“ und CEC nicht „Off“. Verschlechterungen (kein Konsolen-Typ mehr, anderer Name, verschwunden)
   erst nach zwei Meldungen in Folge – direkt nach dem Umschalten meldet der LG kurz Unvollständiges.
+- Symbole je Geräteart (`LgTv.kind`, aus `serviceType`/Icon-Name des LG): game → Controller, Set-Top/Streaming
+  → Box mit Play, Blu-ray/DVD → Scheibe, PC → Laptop, sonst HDMI-Stecker (alle in `LineIcon.java`).
+  Bestätigt sind nur „game“ und „audio“; die übrigen Schlüsselwörter sind geraten.
 - Bekannt: Nach dem Wechsel in den Ruhemodus meldet der LG ein Gerät noch Minuten als „an“; dann weckt
   Umschalten es nicht. Komplett aus erkennt er nach ~10 s. Mehrere gleichzeitige Verbindungen zum LG
   (z. B. ein Test vom Mac und der Startbildschirm) lehnt der LG gelegentlich ab – kurz warten.
