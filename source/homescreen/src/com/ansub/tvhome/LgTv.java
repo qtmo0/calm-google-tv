@@ -505,6 +505,7 @@ final class LgTv {
 
     private JSONObject read() throws Exception {
         InputStream in = socket.getInputStream();
+        java.io.ByteArrayOutputStream text = new java.io.ByteArrayOutputStream();
         while (true) {
             int b1 = readByte(in), b2 = readByte(in);
             int op = b1 & 0x0F;
@@ -519,7 +520,19 @@ final class LgTv {
             if (op == 0x8) throw new java.io.IOException("closed by TV" + closeReason(p));
             if (op == 0x9) { sendFrame(0xA, p); continue; } // the TV checks we're still there: answer it
             if (op == 0xA) continue;
-            return new JSONObject(new String(p, StandardCharsets.UTF_8));
+            // Long answers can come in pieces (a text frame, then continuation frames): collect them
+            // until the last one, then read the whole message.
+            if (op == 0x1) text.reset();
+            else if (op != 0x0) continue;
+            text.write(p);
+            if ((b1 & 0x80) == 0) continue;
+            String s = new String(text.toByteArray(), StandardCharsets.UTF_8);
+            text.reset();
+            try {
+                return new JSONObject(s);
+            } catch (org.json.JSONException e) { // something we can't read: skip it, keep the connection
+                Log.i(TAG, "skipped unreadable message (" + s.length() + " chars)");
+            }
         }
     }
 
