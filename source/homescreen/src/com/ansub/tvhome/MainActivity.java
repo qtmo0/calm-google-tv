@@ -110,7 +110,8 @@ public class MainActivity extends Activity {
     private LgTv lg;
     private List<LgTv.Input> lgInputs;
     private String lgInputsShown = "";
-    private String lgFound;
+    private List<LgTv.Found> lgFound; // LG TVs on the network, for the menu (null: still looking)
+    private boolean lgSearching;
     private Dialog openMenu;
     private String lgForegroundSeen;
     // Dots at the bar icons: green = VPN connected; orange = an HDMI device reports "on" (the TV can't
@@ -1361,7 +1362,21 @@ public class MainActivity extends Activity {
     // "Connect TV"; only adb can send it (DUMP permission).
     private static final String LG_PAIR = "com.ansub.tvhome.LG_PAIR";
     private final BroadcastReceiver lgPair = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { connectLg(); }
+        @Override public void onReceive(Context c, Intent i) {
+            // Optional --es host <IP of the TV>, for networks with several LG TVs.
+            String host = i.getStringExtra("host");
+            List<LgTv.Found> found = lgFound;
+            if (host != null) {
+                LgTv.Found f = new LgTv.Found();
+                f.host = host;
+                if (found != null) for (LgTv.Found x : found) if (host.equals(x.host)) f = x;
+                connectLg(f);
+            } else if (found != null && found.size() > 1) {
+                android.util.Log.i("tvhome-lg", "pairing refused: several LG TVs, give one with --es host");
+            } else {
+                connectLg(found != null && found.size() == 1 ? found.get(0) : null);
+            }
+        }
     };
 
     private final LgTv.Listener lgListener = new LgTv.Listener() {
@@ -1446,20 +1461,21 @@ public class MainActivity extends Activity {
         return next;
     }
 
-    // Before pairing: is there an LG TV on the network? Only for the menu's wording; quick (SSDP).
+    // Before pairing: which LG TVs are on the network? For the menu, one entry each. About 4 s.
     private void lookForLg() {
         if (lgFound != null && !lgFound.isEmpty()) return;
-        lgFound = null;
+        if (lgSearching) return; // the last result stays in the menu until a new one is in
+        lgSearching = true;
         new Thread(() -> {
-            String host = lg.discover();
-            runOnUiThread(() -> lgFound = host == null ? "" : host);
+            List<LgTv.Found> all = lg.discoverAll();
+            runOnUiThread(() -> { lgFound = all; lgSearching = false; });
         }, "lgtv-find").start();
     }
 
-    private void connectLg() {
+    // Pairs with the TV picked in the menu (null: search, for a network with a single LG TV).
+    private void connectLg(LgTv.Found tv) {
         lg.stop();
-        // The TV asks "Allow?"; LgTv reports progress with onStatus. Use the address the menu found.
-        lg.start(true, lgFound != null && !lgFound.isEmpty() ? lgFound : null);
+        lg.start(true, tv); // the TV asks "Allow?"; LgTv reports progress with onStatus
     }
 
     // Hold OK on the settings icon: connect or disconnect the TV, or open Android's settings.
@@ -1476,13 +1492,24 @@ public class MainActivity extends Activity {
             enabled = new boolean[] {true, true, true};
             switches = new Boolean[] {showDeviceDots(), null, null};
         } else {
-            boolean found = lgFound != null && !lgFound.isEmpty();
-            items = new String[] {"Fernseher verbinden", "Android-Einstellungen"};
-            subs = new String[] {lgFound == null ? "suche …" : found ? "LG-Fernseher gefunden" : "kein LG im Netz", null};
-            enabled = new boolean[] {found, true};
-            switches = new Boolean[] {null, null};
-            if (!found) lookForLg();
+            // One "Connect TV" per LG TV on the network, each with its name, so the right one can be
+            // picked when there are several. A wrong one is simply disconnected again.
+            final List<LgTv.Found> found = lgFound;
+            int n = found == null || found.isEmpty() ? 1 : found.size();
+            items = new String[n + 1];
+            subs = new String[n + 1];
+            enabled = new boolean[n + 1];
+            switches = new Boolean[n + 1];
+            for (int i = 0; i < n; i++) {
+                items[i] = "Fernseher verbinden";
+                subs[i] = found == null ? "suche …" : found.isEmpty() ? "kein LG im Netz" : found.get(i).name;
+                enabled[i] = found != null && !found.isEmpty();
+            }
+            items[n] = "Android-Einstellungen";
+            enabled[n] = true;
+            if (found == null || found.isEmpty()) lookForLg();
         }
+        final List<LgTv.Found> choices = lgFound;
         menu(anchor, status, items, subs, enabled, switches, which -> {
             if (which == items.length - 1) { open(SETTINGS); return; }
             if (paired && which == 0) { // the switch: the menu stays open, the dots follow at once
@@ -1500,8 +1527,8 @@ public class MainActivity extends Activity {
                 lgFound = null;
                 buildTiles();
                 android.widget.Toast.makeText(this, "Fernseher getrennt", android.widget.Toast.LENGTH_SHORT).show();
-            } else {
-                connectLg();
+            } else if (choices != null && which < choices.size()) {
+                connectLg(choices.get(which));
             }
         });
     }

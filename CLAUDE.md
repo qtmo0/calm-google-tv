@@ -44,7 +44,7 @@ Danach, jeweils nach Zustimmung:
 | 4. Zeiten | `sh tvctl.sh times <IP> 3 30` (Schoner 3 Min., Ruhe 30 Min.; Nutzer darf andere Werte wählen) |
 | 5. Animationen aus | `sh tvctl.sh animations <IP> off` |
 | 6. Fernbedienungs-Tasten | `sh tvctl.sh remote-keys <IP>` – nur wenn `keys` BUTTON_3/BUTTON_4 zeigt. Mit der **echten** Fernbedienung testen lassen |
-| 7. LG-Fernseher koppeln (nur wenn der Streamer an einem LG mit webOS hängt; fragen!) | `sh tvctl.sh lg-pair <IP>` – der Nutzer muss am LG mit der LG-Fernbedienung „Zulassen“ drücken. Danach erscheinen Konsolen/HDMI-Geräte in der Leiste |
+| 7. LG-Fernseher koppeln (nur wenn der Streamer an einem LG mit webOS hängt; fragen!) | `sh tvctl.sh lg-pair <IP> [LG_IP]` – der Nutzer muss am LG mit der LG-Fernbedienung „Zulassen“ drücken. Danach erscheinen Konsolen/HDMI-Geräte in der Leiste |
 | 8. Neustart + Kontrolle | `sh tvctl.sh reboot <IP>` (wartet selbst 30 s vorher) |
 
 Zum Schluss `sh tvctl.sh info <IP>` und dem Nutzer freien Speicher vorher/nachher zeigen
@@ -108,6 +108,11 @@ nicht löschen, `undo` braucht es.
 
 ## LG-Fernseher (HDMI-Geräte in der Leiste)
 
+- Suche: SSDP; antwortet kein LG (manche hören nach einer Weile auf, Ports bleiben offen), Scan des eigenen /24-
+  Heimnetzes auf Port 3001, bestätigt über die Gerätebeschreibung (Port 1954, „LG Electronics“). Mehrere LGs →
+  ein Menüeintrag pro TV mit Name/Modell. Gemerkt werden Host und UUID; bei neuer IP wird per UUID neu gesucht.
+  Achtung: mit aktivem VPN (Tailscale) ist das VPN die „aktive“ Verbindung – für Heimnetz-Adressen immer WLAN/
+  Ethernet nehmen. `tvctl.sh lg-pair <IP> [LG_IP]` (bei mehreren LGs LG_IP angeben).
 - Code: `source/homescreen/src/com/ansub/tvhome/LgTv.java` (Suche per SSDP, eigener WebSocket-Client über
   TLS auf Port 3001, Zertifikat wird beim Koppeln gemerkt und danach geprüft) und in `MainActivity.java`
   `lgListener` (Filter), `showTvMenu`/`menu` (Menü am Zahnrad), `buildTiles` (Symbole, Punkte, Trennstriche).

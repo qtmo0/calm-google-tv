@@ -22,8 +22,9 @@
 #   times       <IP> [schoner_min] [ruhe_min]   Standard 3 und 30
 #   animations  <IP> off|on
 #   remote-keys <IP>                      YouTube->YouTube, Netflix->Wholphin (Bedienungshilfe)
-#   lg-pair     <IP>                      Startbildschirm mit einem LG-Fernseher (webOS) koppeln: HDMI-Geräte
-#                                         in der Leiste, Umschalten per OK. Der LG fragt einmal "Zulassen?"
+#   lg-pair     <IP> [LG_IP]              Startbildschirm mit einem LG-Fernseher (webOS) koppeln: HDMI-Geräte
+#                                         in der Leiste, Umschalten per OK. Der LG fragt einmal "Zulassen?".
+#                                         Bei mehreren LGs im Netz die IP des richtigen LG mitgeben.
 #   reboot      <IP>                      30 s warten, neu starten, Start prüfen
 #   undo        <IP>                      alles laut Sicherung zurück
 set -e
@@ -205,13 +206,15 @@ lg-pair)
   adb -s "$TV" logcat -c
   tv input keyevent KEYCODE_HOME
   sleep 6   # der Startbildschirm sucht den LG im Netz
-  tv am broadcast -a com.ansub.tvhome.LG_PAIR >/dev/null
+  if [ -n "$1" ]; then tv am broadcast -a com.ansub.tvhome.LG_PAIR --es host "$1" >/dev/null
+  else tv am broadcast -a com.ansub.tvhome.LG_PAIR >/dev/null; fi
   echo "Am LG-Fernseher erscheint gleich \"Calm Google TV möchte sich verbinden\" – mit der LG-Fernbedienung Zulassen drücken (90 s Zeit)."
   i=0; result=
   while [ $i -lt 50 ]; do
     out=$(adb -s "$TV" logcat -d -s tvhome-lg | tr -d '\r')
     case "$out" in
       *"pairing: registered"*) result=ok; break ;;
+      *"several LG TVs"*) echo "Mehrere LG-Fernseher im Netz – bitte die IP des richtigen mitgeben: sh tvctl.sh lg-pair $TARGET <LG_IP>" >&2; exit 1 ;;
       *"pairing refused"*|*"no LG TV found"*) result=fail; break ;;
     esac
     i=$((i + 1)); sleep 2

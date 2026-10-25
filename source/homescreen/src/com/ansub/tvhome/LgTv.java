@@ -83,16 +83,23 @@ final class LgTv {
         prefs.edit().clear().apply();
     }
 
-    // Looks for an LG TV with SSDP, as phone apps do. Returns its IP address, or null. Blocking.
-    String discover() {
+    // One LG TV that answered the search: where it is, its fixed id (survives a new IP address) and
+    // what to call it in the menu ("TV · OLED65C43LA", from its device description).
+    static final class Found {
+        String host, uuid, name;
+    }
+
+    // Every LG TV on the network, found with SSDP as phone apps do. Blocking, about 4 s. UDP can get
+    // lost and a TV doesn't always answer at once: ask three times, listen the whole time, skip
+    // answers from other devices (a Hue bridge answers too) and duplicates.
+    List<Found> discoverAll() {
+        List<Found> out = new ArrayList<>();
         WifiManager wm = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
         WifiManager.MulticastLock lock = wm == null ? null : wm.createMulticastLock("tvhome-lg");
         try (DatagramSocket s = new DatagramSocket()) {
             if (lock != null) lock.acquire();
             byte[] msg = ("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\n"
                     + "ST: urn:lge-com:service:webos-second-screen:1\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
-            // UDP can get lost and the TV doesn't always answer at once: ask three times, listen up to 4 s,
-            // and skip answers from other devices.
             InetAddress group = InetAddress.getByName("239.255.255.250");
             long end = System.currentTimeMillis() + 4000, nextAsk = 0;
             int asked = 0;
@@ -107,22 +114,138 @@ final class LgTv {
                 DatagramPacket p = new DatagramPacket(buf, buf.length);
                 try { s.receive(p); } catch (java.net.SocketTimeoutException e) { continue; }
                 String reply = new String(p.getData(), 0, p.getLength(), StandardCharsets.US_ASCII);
-                if (reply.contains("webos-second-screen")) return p.getAddress().getHostAddress();
+                if (!reply.contains("webos-second-screen")) continue;
+                String host = p.getAddress().getHostAddress();
+                boolean dup = false;
+                for (Found f : out) if (f.host.equals(host)) dup = true;
+                if (dup) continue;
+                Found f = new Found();
+                f.host = host;
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?i)USN:\\s*uuid:([0-9a-f-]+)").matcher(reply);
+                f.uuid = m.find() ? m.group(1) : null;
+                out.add(f);
             }
         } catch (Exception e) {
-            Log.i(TAG, "no LG TV found: " + e);
+            Log.i(TAG, "search failed: " + e);
         } finally {
             if (lock != null && lock.isHeld()) lock.release();
         }
+        for (Found f : out) {
+            String[] d = describe(f.host);
+            f.name = d == null ? "LG-Fernseher" : d[0];
+            if (f.uuid == null && d != null) f.uuid = d[1];
+        }
+        // Some LG TVs stop answering the search after a while (seen on an OLED C4, ports still open).
+        // Then look for the TV's control port on the home network itself.
+        if (out.isEmpty()) out = scanHomeNetwork();
+        if (out.isEmpty()) Log.i(TAG, "no LG TV found");
+        return out;
+    }
+
+    // Fallback search: every address of this device's own /24 network, port 3001 (the TV's control
+    // port), confirmed by its device description saying "LG Electronics". Local only, about 2 s.
+    private List<Found> scanHomeNetwork() {
+        final List<Found> out = java.util.Collections.synchronizedList(new ArrayList<>());
+        String me = ownAddress();
+        if (me == null) return out;
+        String prefix = me.substring(0, me.lastIndexOf('.') + 1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(32);
+        for (int i = 1; i < 255; i++) {
+            final String host = prefix + i;
+            if (host.equals(me)) continue;
+            pool.execute(() -> {
+                try (Socket s = new Socket()) {
+                    s.connect(new InetSocketAddress(host, PORT), 400);
+                } catch (Exception e) {
+                    return;
+                }
+                String[] d = describe(host);
+                if (d == null || !d[2].contains("LG")) return;
+                Found f = new Found();
+                f.host = host;
+                f.name = d[0];
+                f.uuid = d[1];
+                out.add(f);
+            });
+        }
+        pool.shutdown();
+        try { pool.awaitTermination(8, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
+        List<Found> sorted = new ArrayList<>(out);
+        java.util.Collections.sort(sorted, (a, b) -> a.host.compareTo(b.host));
+        if (!sorted.isEmpty()) Log.i(TAG, "found by scanning the home network: " + sorted.size());
+        return sorted;
+    }
+
+    // This device's IPv4 address on the home network: Wi-Fi or Ethernet, never a VPN (with Tailscale on,
+    // the VPN counts as the "active" network). Null if there is none.
+    @SuppressWarnings("deprecation")
+    private String ownAddress() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            for (android.net.Network n : cm.getAllNetworks()) {
+                android.net.NetworkCapabilities c = cm.getNetworkCapabilities(n);
+                if (c == null || c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) continue;
+                if (!c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                        && !c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue;
+                android.net.LinkProperties lp = cm.getLinkProperties(n);
+                if (lp == null) continue;
+                for (android.net.LinkAddress a : lp.getLinkAddresses())
+                    if (a.getAddress() instanceof java.net.Inet4Address && a.getPrefixLength() >= 16)
+                        return a.getAddress().getHostAddress();
+            }
+        } catch (Exception ignored) {}
         return null;
+    }
+
+    // The first LG TV found, or the one with this id if given (after its address changed). Or null.
+    Found discover(String uuid) {
+        for (Found f : discoverAll()) if (uuid == null || uuid.equals(f.uuid)) return f;
+        return null;
+    }
+
+    // Pairings from before ids were kept: only if there is exactly one LG TV, it must be that one.
+    private Found onlyOne() {
+        List<Found> all = discoverAll();
+        return all.size() == 1 ? all.get(0) : null;
+    }
+
+    // From the TV's device description (plain HTTP on port 1954, read with a socket):
+    // {"TV · OLED65C43LA" (name set on the TV and model), its id, manufacturer}. Null if unreadable.
+    private static String[] describe(String host) {
+        try (Socket s = new Socket()) {
+            s.connect(new InetSocketAddress(host, 1954), 1500);
+            s.setSoTimeout(1500);
+            OutputStream out = s.getOutputStream();
+            out.write(("GET / HTTP/1.0\r\nHost: " + host + ":1954\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            InputStream in = s.getInputStream();
+            java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+            byte[] chunk = new byte[2048];
+            int n;
+            while (b.size() < 64_000 && (n = in.read(chunk)) > 0) b.write(chunk, 0, n);
+            String xml = b.toString("UTF-8");
+            String name = tag(xml, "friendlyName"), model = tag(xml, "modelNumber");
+            String udn = tag(xml, "UDN"), maker = tag(xml, "manufacturer");
+            if (model != null) model = model.split("\\.")[0];
+            if (name == null || name.isEmpty()) name = "LG-Fernseher";
+            String label = model == null || model.isEmpty() ? name : name + " · " + model;
+            return new String[] {label, udn == null ? null : udn.replace("uuid:", ""), maker == null ? "" : maker};
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String tag(String xml, String name) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("<" + name + ">([^<]*)</" + name + ">").matcher(xml);
+        return m.find() ? m.group(1).trim() : null;
     }
 
     // Connects and keeps reading the inputs until stop(). pair = true may show the TV's "Allow?"
     // prompt; false only uses an existing pairing and never prompts.
     void start(final boolean pair) { start(pair, null); }
 
-    // hint: an address just found (by the menu), so pairing doesn't have to search again.
-    void start(final boolean pair, final String hint) {
+    // hint: the TV picked in the menu, so pairing goes to exactly that one without searching again.
+    void start(final boolean pair, final Found hint) {
         if (worker != null) return;
         Thread t = new Thread(() -> run(pair, hint), "lgtv");
         worker = t;
@@ -158,20 +281,26 @@ final class LgTv {
         }
     }
 
-    private void run(boolean pair, String hint) {
+    private void run(boolean pair, Found hint) {
         try {
-            String host = hint != null ? hint : prefs.getString("host", null);
-            if (host == null || (pair && hint == null)) host = discover();
+            String host = hint != null ? hint.host : prefs.getString("host", null);
+            String uuid = hint != null ? hint.uuid : prefs.getString("uuid", null);
+            if (host == null) {
+                Found f = discover(uuid);
+                host = f == null ? null : f.host;
+            }
             if (host == null) { status(pair ? "Kein LG-Fernseher im Netz gefunden" : null); return; }
             try {
                 open(host);
             } catch (SecurityException e) {
                 throw e;
-            } catch (Exception e) { // the TV may have a new address: look for it once
-                String found = discover();
-                if (found == null || found.equals(host)) throw e;
-                host = found;
+            } catch (Exception e) { // the TV may have a new address: look for this same TV once (by its id)
+                Found f = uuid != null ? discover(uuid) : onlyOne();
+                if (f == null || f.host.equals(host)) throw e;
+                host = f.host;
+                uuid = f.uuid;
                 open(host);
+                prefs.edit().putString("host", host).putString("uuid", uuid).apply();
             }
             String key = prefs.getString("key", null);
             if (key == null && !pair) return; // never prompt unasked
@@ -184,7 +313,7 @@ final class LgTv {
                 if (pair) Log.i(TAG, "pairing: " + type + " " + String.valueOf(m.opt("payload")).replaceAll("client-key\\\":\\\"[^\\\"]+", "client-key\\\":\\\"…"));
                 if ("registered".equals(type)) {
                     prefs.edit().putString("key", m.getJSONObject("payload").getString("client-key"))
-                            .putString("host", host).apply();
+                            .putString("host", host).putString("uuid", uuid).apply();
                     break;
                 }
                 if ("error".equals(type)) { Log.i(TAG, "pairing refused: " + m.optString("error")); status("Verbindung abgelehnt"); return; }

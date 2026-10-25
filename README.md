@@ -55,11 +55,18 @@ Gerät um (die PS5 wacht dabei per HDMI-CEC auf), **Home** auf der Google-Fernbe
 Menü-Taste) → **Fernseher verbinden** → am LG mit der LG-Fernbedienung **Zulassen**. Mit Claude Code geht es
 auch per `sh tvctl.sh lg-pair <IP>`. Im selben Menü: Gerätestatus (oranger Punkt) ein/aus, Trennen.
 
+**Mehrere LG-Fernseher im Netz:** Das Menü zeigt „Fernseher verbinden“ einmal pro Fernseher, jeweils mit
+dessen Namen und Modell (z. B. „TV · OLED65C43LA“; den Namen stellst du am LG unter *Allgemein → Geräte →
+TV-Name* ein). Den richtigen auswählen – war es der falsche, einfach über dasselbe Menü trennen und den
+anderen wählen. Per Claude Code: `sh tvctl.sh lg-pair <Streamer-IP> <LG-IP>`. Bekommt der LG später eine neue
+IP-Adresse, findet der Startbildschirm genau diesen Fernseher wieder (an seiner festen Geräte-ID).
+
 ![Menü am Zahnrad](docs/screenshots/menue-fernsehgeraet.jpg)
 
 <sub>Getestet mit einem LG OLED65C4 (2024) und PS5 / Nintendo Switch. Der Startbildschirm spricht nur im
 Heimnetz mit dem LG und nur, solange er sichtbar ist; nichts geht ins Internet. Falls der LG nicht gefunden
-wird: Streamer und LG im selben Netz, am LG „LG Connect Apps“ bzw. „Mobile TV On“ einschalten. Andere
+wird: Streamer und LG im selben Netz, am LG „LG Connect Apps“ bzw. „Mobile TV On“ einschalten. Antwortet der LG
+nicht auf die übliche Suche (kommt vor), sucht der Startbildschirm im eigenen Heimnetz nach ihm. Andere
 Fernseher-Marken zeigen keine Geräte in der Leiste.</sub>
 
 **Auf Fernsehern mit eingebautem Google TV** (statt eines Streamers) zeigt die Leiste die HDMI-Eingänge des
