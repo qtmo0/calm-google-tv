@@ -39,7 +39,7 @@ Danach, jeweils nach Zustimmung:
 |---|---|
 | 0. Ausgangszustand sichern (Pflicht, zuerst) | `sh tvctl.sh backup <IP>` |
 | 1. Werbung/Extras aus (einzeln fragen) | `sh tvctl.sh disable <IP> <paket>` – Kandidaten: `com.google.android.backdrop`, `com.google.android.videos`, `com.google.android.tvrecommendations`, `com.google.android.apps.education.cast2class`, `com.google.android.apps.tv.dreamx` (Google-Schoner/Ambient, auch Google-Home-Panel) |
-| 2. Startbildschirm | `sh tvctl.sh home <IP> "<pakete,kommagetrennt>"` – meldet er, dass der TV-eigene Startbildschirm gewinnt: fragen, dann mit `--launcher`. Meldet er danach die Einrichtungs-App: **gesondert** fragen, dann `--launcher --setup` |
+| 2. Startbildschirm | `sh tvctl.sh home <IP> "<pakete,kommagetrennt>"` – meldet er, dass der TV-eigene Startbildschirm gewinnt: fragen, dann mit `--launcher`. **`--launcher` nur, wenn adb über USB oder Port 5555 geht** (nicht über kabelloses Debugging mit Pairing-Code, z. B. Chromecast) – sonst droht eine Neustart-Schleife ohne Rückweg. Meldet er danach die Einrichtungs-App: **gesondert** fragen, dann `--launcher --setup` |
 | 3. Bildschirmschoner | `sh tvctl.sh screensaver <IP>` |
 | 4. Zeiten | `sh tvctl.sh times <IP> 3 30` (Schoner 3 Min., Ruhe 30 Min.; Nutzer darf andere Werte wählen) |
 | 5. Animationen aus | `sh tvctl.sh animations <IP> off` |

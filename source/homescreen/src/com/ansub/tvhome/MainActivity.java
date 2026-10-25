@@ -134,6 +134,7 @@ public class MainActivity extends Activity {
     private String movingKey;   // the app being moved with left/right, if any
     private TextView moveHint;  // shown above the apps while moving
     private boolean longPressed; // OK was held: swallow the key-up so the app doesn't open
+    private String okDownOn; // the tile OK went down on; a key-up left over from another app opens nothing
 
     // Apps installed, removed or updated. This often lands once Home is already back in front (an app
     // uninstalled from the menu is gone only after Android's prompt has closed), so catch up then.
@@ -783,14 +784,16 @@ public class MainActivity extends Activity {
             }
             if (!ok) return false;
             if (down) {
-                if (ev.getRepeatCount() == 0) longPressed = false;
+                if (ev.getRepeatCount() == 0) { longPressed = false; okDownOn = key; }
                 else if (editable && !longPressed && (ev.isLongPress()
                         || ev.getEventTime() - ev.getDownTime() >= ViewConfiguration.getLongPressTimeout())) {
                     longPressed = true;
                     showEditMenu(key);
                 }
-            } else if (!longPressed) {
-                open(key);
+            } else {
+                boolean mine = key.equals(okDownOn);
+                okDownOn = null;
+                if (mine && !longPressed) open(key);
             }
             return true;
         });

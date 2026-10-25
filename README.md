@@ -346,6 +346,11 @@ dann weg).
 - **Chromecast mit Google TV / andere Google TVs:** Aufräumen, Startbildschirm, Bildschirmschoner und Zeiten
   sollten gleich funktionieren. Die Tastencodes der Fernbedienung können abweichen (Streamer: YouTube =
   `BUTTON_3`, Netflix = `BUTTON_4`, siehe `/system/usr/keylayout/Vendor_18d1_Product_9451.kl`).
+- **Achtung bei Chromecast / Verbindung über „Kabelloses Debugging“:** Den Google-TV-eigenen Startbildschirm
+  (`tvctl.sh home … --launcher`) nur ausschalten, wenn sich der TV über USB oder Port 5555 verbinden lässt.
+  Bei tv-detox blieb ein Chromecast danach in einer Neustart-Schleife hängen; über kabelloses Debugging riss
+  die Verbindung ab, bevor etwas zurückgestellt werden konnte, und nur ein Zurücksetzen half. Ohne
+  `--launcher` bleibt Google TVs Startbildschirm an – Aufräumen, Schoner und Zeiten funktionieren trotzdem.
 - **Andere Android-TVs (Sony, TCL, …):** Die Liste der Extras in `setup.sh` passt dann nicht – vorher mit
   `sh source/homescreen/candidates.sh <IP>` prüfen, was gefahrlos aus kann.
 
