@@ -892,12 +892,27 @@ public class MainActivity extends Activity {
         } else if (key.startsWith(QUICK)) {
             openQuick(key.substring(QUICK.length()));
             return;
+        } else if (ZATTOO.equals(key) && openZattooLive()) {
+            return;
         } else {
             i = launchIntent(getPackageManager(), key);
             if (i == null) return;
         }
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try { startActivity(i); } catch (Exception ignored) {}
+    }
+
+    private static final String ZATTOO = "com.zattoo.player";
+
+    /**
+     * Zattoo would come back where it was left, e.g. hours back in its guide. Its app link /live starts the
+     * last watched channel full screen. CLEAR_TOP/SINGLE_TOP hand the link to a running Zattoo window (Android
+     * would otherwise just bring the old task to the front); a second window makes Zattoo crash when it closes.
+     */
+    private boolean openZattooLive() {
+        Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse("https://zattoo.com/live")).setPackage(ZATTOO);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        try { startActivity(i); return true; } catch (Exception e) { return false; }
     }
 
     // Live TV apps an HDMI tile can open, in order. Droidlogic (Amlogic) TVs ship Live TV under their

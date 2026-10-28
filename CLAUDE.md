@@ -58,7 +58,14 @@ Beispiel (Liste des Autors): `com.github.damontecres.wholphin,com.google.android
 
 **Fernbedienungs-Tasten:** Die fertige App legt YouTube-Taste → YouTube und Netflix-Taste → **Wholphin** (ein
 Jellyfin-Client), Stern-Taste (`MACRO_1`) → Zattoo, direkt im Reiter Programm
-(App-Link `https://zattoo.com/guide`; klappt der nicht, startet Zattoo normal). Die Stern-Taste kommt nur an, wenn in den Einstellungen
+(App-Link `https://zattoo.com/guide`; klappt der nicht, startet Zattoo normal). Ist der Programmführer Zattoos
+**erste** Seite, zeigt er die alte Stelle (Stunden zurück); kommt man von einer anderen Seite, steht er bei „jetzt“.
+Deshalb öffnet die Taste erst `https://zattoo.com/live` (Wunsch des Nutzers, nicht die Aufnahmen), wartet, bis Zattoo 5 Fenster-Änderungen gemeldet hat
+(+0,6 s; Bedienungshilfe bekommt dafür nur Ereignisse von `com.zattoo.player`, keine Inhalte), dann den Programmführer.
+Die Zattoo-Kachel im Startbildschirm öffnet `https://zattoo.com/live` (letzter live gesehener Sender im Vollbild;
+`openZattooLive` in `MainActivity.java`). Links immer mit `CLEAR_TOP|SINGLE_TOP` übergeben, **nie**
+`FLAG_ACTIVITY_CLEAR_TASK`: Mit zwei Zattoo-Fenstern stürzt Zattoo beim Schließen ab
+(„Receiver not registered“ in `adb logcat -b crash`). Die Stern-Taste kommt nur an, wenn in den Einstellungen
 der Fernbedienung die Eingangsumschaltung per Infrarot dafür aus ist; sonst geht sie direkt an den Fernseher. Das vorher sagen. Will der Nutzer ein anderes Ziel für die Netflix-Taste (oder hat er Netflix
 und will die Taste behalten), Schritt 6 weglassen oder `targetFor()` in
 `source/remote-keys/src/io/github/qtmo0/calmtv/remotekeys/TastenService.java` ändern und neu bauen (braucht Java + SDK, siehe
