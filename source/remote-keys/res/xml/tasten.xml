@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Window events only from Zattoo: the star key waits until Zattoo has drawn a page before opening its guide. -->
+<!-- Window changes tell which app is in front (package name only). Zattoo's window is read only to count its
+     elements: the star key waits until Zattoo leaves its guide before opening it again. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/beschreibung"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
-    android:packageNames="com.zattoo.player"
+    android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagRequestFilterKeyEvents"
+    android:accessibilityFlags="flagRequestFilterKeyEvents|flagIncludeNotImportantViews"
     android:canRequestFilterKeyEvents="true"
+    android:canRetrieveWindowContent="true"
     android:notificationTimeout="0" />

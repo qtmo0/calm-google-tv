@@ -10,6 +10,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 /**
  * Remaps the Google TV Streamer remote's app buttons.
@@ -23,25 +24,67 @@ public class TastenService extends AccessibilityService {
 
     private static final String TAG = "TvTasten";
     // Zattoo's own app links. Opened as Zattoo's first page, the guide shows wherever it was left (hours back);
-    // reached from another page it starts at "now". So the star key goes to live TV first, waits until
-    // Zattoo has drawn something, then opens the guide.
+    // reached from another page it starts at "now". So the star key goes to live TV first, waits until the
+    // live view is really on screen, then opens the guide. Counting window events wasn't enough: after a night
+    // in standby Zattoo first redraws its old page, and a guide link that meets an open guide does nothing.
     private static final String ZATTOO_GUIDE = "https://zattoo.com/guide";
     private static final String ZATTOO_DETOUR = "https://zattoo.com/live";
-    private static final int DRAWN_EVENTS = 5;   // window changes from Zattoo before its page counts as drawn
-    private static final long SETTLE_MS = 600;    // then a little more time before switching page
-    private static final long GIVE_UP_MS = 6000;  // no changes at all: open the guide anyway
+    // The live view has ~22 elements (~50 while the channel info shows), the guide ~220. Anything in between
+    // counts as "not the guide". Only the count is read, no texts.
+    private static final int OTHER_MIN = 12, OTHER_MAX = 120;
+    private static final long POLL_MS = 150;
+    private static final long SETTLE_MS = 150;    // seen twice in a row: a moment more, then the guide
+    private static final long GIVE_UP_MS = 8000;  // live never recognised: open the guide anyway
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String guideFor;  // package waiting for its guide, or null
-    private int changes;
+    private int liveSeen;
     private long pressedAt;
     private final Runnable openGuide = () -> {
         String pkg = guideFor;
         guideFor = null;
         if (pkg == null) return;
-        Log.i(TAG, "star: guide after " + (SystemClock.uptimeMillis() - pressedAt) + " ms, " + changes + " changes");
+        Log.i(TAG, "star: guide after " + (SystemClock.uptimeMillis() - pressedAt) + " ms");
         openLink(pkg, ZATTOO_GUIDE);
     };
+    private final Runnable pollLive = new Runnable() {
+        @Override public void run() {
+            if (guideFor == null) return;
+            long waited = SystemClock.uptimeMillis() - pressedAt;
+            if (waited >= GIVE_UP_MS) {
+                Log.i(TAG, "star: live not recognised, opening guide anyway");
+                handler.post(openGuide);
+                return;
+            }
+            int n = elementsOf(guideFor);
+            liveSeen = isOtherPage(n) ? liveSeen + 1 : 0;
+            Log.i(TAG, "star: " + n + " elements at " + waited + " ms");
+            if (liveSeen >= 2) handler.postDelayed(openGuide, SETTLE_MS);
+            else handler.postDelayed(this, POLL_MS);
+        }
+    };
+
+    private static boolean isOtherPage(int elements) {
+        return elements >= OTHER_MIN && elements <= OTHER_MAX;
+    }
+
+    /** Number of elements in the app's window if it is the active one, else -1. */
+    private int elementsOf(String pkg) {
+        // Only ask the app's window when it is in front: a video player can take ~5 s to answer.
+        if (!pkg.equals(front)) return -1;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null || !pkg.contentEquals(String.valueOf(root.getPackageName()))) return -1;
+        return count(root, 300);
+    }
+
+    private static int count(AccessibilityNodeInfo node, int cap) {
+        int n = 1;
+        for (int i = 0; i < node.getChildCount() && n < cap; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) n += count(child, cap - n);
+        }
+        return n;
+    }
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
@@ -49,14 +92,22 @@ public class TastenService extends AccessibilityService {
         if (pkg == null) return false;
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
             handler.removeCallbacks(openGuide);
+            handler.removeCallbacks(pollLive);
             guideFor = null;
             if (event.getKeyCode() == KeyEvent.KEYCODE_MACRO_1) {
                 guideFor = pkg;
-                changes = 0;
+                liveSeen = 0;
                 pressedAt = SystemClock.uptimeMillis();
-                Log.i(TAG, "star: live first");
-                openLink(pkg, ZATTOO_DETOUR);
-                handler.postDelayed(openGuide, GIVE_UP_MS);
+                int n = elementsOf(pkg);
+                if (isOtherPage(n)) {
+                    // Zattoo is in front on another page: the guide comes up at "now" without a detour.
+                    Log.i(TAG, "star: Zattoo shows another page (" + n + " elements), guide directly");
+                    openGuide.run();
+                } else {
+                    Log.i(TAG, "star: live first (" + n + " elements)");
+                    openLink(pkg, ZATTOO_DETOUR);
+                    handler.postDelayed(pollLive, POLL_MS);
+                }
             } else {
                 open(pkg);
             }
@@ -100,14 +151,15 @@ public class TastenService extends AccessibilityService {
         }
     }
 
+    private String front;  // package of the app in front, from window changes (no content)
+
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (guideFor == null || !guideFor.contentEquals(String.valueOf(event.getPackageName()))) return;
-        if (++changes <= DRAWN_EVENTS) Log.i(TAG, "star: change " + changes + " "
-                + AccessibilityEvent.eventTypeToString(event.getEventType()) + " at " + (SystemClock.uptimeMillis() - pressedAt) + " ms");
-        if (changes == DRAWN_EVENTS) {
-            handler.removeCallbacks(openGuide);
-            handler.postDelayed(openGuide, SETTLE_MS);
-        }
+        CharSequence pkg = event.getPackageName();
+        if (pkg == null) return;
+        String p = pkg.toString();
+        // System overlays (volume, notifications) and the keyboard don't replace the app underneath.
+        if (p.equals("com.android.systemui") || p.equals("android") || p.contains("inputmethod")) return;
+        front = p;
     }
     @Override public void onInterrupt() { }
 }
