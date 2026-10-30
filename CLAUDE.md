@@ -57,17 +57,10 @@ automatisch als Schild oben rechts, wenn es installiert ist.
 Beispiel (Liste des Autors): `com.github.damontecres.wholphin,com.google.android.youtube.tv,com.zattoo.player,de.swr.avp.ard.tv,com.zdf.android.mediathek,com.amazon.amazonvideo.livingroom`
 
 **Fernbedienungs-Tasten:** Die fertige App legt YouTube-Taste → YouTube und Netflix-Taste → **Wholphin** (ein
-Jellyfin-Client), Stern-Taste (`MACRO_1`) → Zattoo, direkt im Reiter Programm
-(App-Link `https://zattoo.com/guide`; klappt der nicht, startet Zattoo normal). Ist der Programmführer Zattoos
-**erste** Seite, zeigt er die alte Stelle (Stunden zurück); kommt man von einer anderen Seite, steht er bei „jetzt“.
-Deshalb öffnet die Taste erst `https://zattoo.com/live` (Wunsch des Nutzers, nicht die Aufnahmen), wartet, bis Zattoo nicht mehr den
-Programmführer zeigt (Fenster hat 12–120 Elemente, zweimal im Abstand von 0,15 s; Live ~22, mit Senderinfo ~50,
-Programmführer ~220; gezählt wird nur, keine Texte gelesen; spätestens nach 8 s), dann den Programmführer. Liegt
-Zattoo beim Drücken schon vorne auf einer anderen Seite, geht die Taste ohne Umweg direkt in den Programmführer. Welche App vorne ist, merkt sich der Dienst über
-Fenster-Wechsel (nur Paketname); Zattoos Fenster fragt er nur ab, wenn Zattoo vorne ist – eine Film-App im
-Vordergrund brauchte für die Abfrage fast 5 s. Fenster-Ereignisse zu zählen
-reichte nicht: Nach einer Nacht im Standby zeichnet Zattoo erst die alte Seite neu, und ein Programmführer-Link, der
-auf einen offenen Programmführer trifft, bewirkt nichts. Log: `adb logcat -d -s TvTasten` („star: N elements at … ms“).
+Jellyfin-Client), Stern-Taste (`MACRO_1`) → Zattoo **live** (App-Link
+`https://zattoo.com/live`, letzter live gesehener Sender im Vollbild). Den Programmführer (`/guide`) direkt zu öffnen
+wurde verworfen: Nach einer langen Pause (Standby über Nacht) zeigt Zattoos **erster** Programmführer den alten
+Zeitpunkt, egal welche Seite vorher offen war; auch ein Umweg über Live half nicht, ein frischer Start ebenfalls nicht.
 Die Zattoo-Kachel im Startbildschirm öffnet `https://zattoo.com/live` (letzter live gesehener Sender im Vollbild;
 `openZattooLive` in `MainActivity.java`). Links immer mit `CLEAR_TOP|SINGLE_TOP` übergeben, **nie**
 `FLAG_ACTIVITY_CLEAR_TASK`: Mit zwei Zattoo-Fenstern stürzt Zattoo beim Schließen ab
