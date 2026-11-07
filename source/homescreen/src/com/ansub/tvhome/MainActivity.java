@@ -11,8 +11,15 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -223,6 +230,7 @@ public class MainActivity extends Activity {
         lg = new LgTv(this, handler, lgListener);
         applyPhase(false);
         scheduleTick();
+        handler.postDelayed(this::prepareBackgrounds, 20_000);
 
         moveHint = text(px(24), 0xA8FFFFFF, regular);
         moveHint.setText(Strings.t("Use the arrows to move it, then press OK"));
@@ -270,6 +278,8 @@ public class MainActivity extends Activity {
         TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
         if (tim != null) try { tim.unregisterCallback(inputsChanged); } catch (Exception ignored) {}
         handler.removeCallbacksAndMessages(null);
+        bgWorker.shutdownNow();
+        thumbWorker.shutdownNow();
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
         if (cm != null) try { cm.unregisterNetworkCallback(networkChanged); } catch (Exception ignored) {}
         if (cm != null) try { cm.unregisterNetworkCallback(vpnChanged); } catch (Exception ignored) {}
@@ -430,49 +440,249 @@ public class MainActivity extends Activity {
         return h >= 5 && h < 11 ? 0 : h >= 11 && h < 17 ? 1 : h >= 17 && h < 22 ? 2 : 3;
     }
 
-    // Swaps the window background only when the phase changes: drawn once by the window, no extra view.
-    // The final picture is a dithered bitmap (dark gradients band visibly on an OLED and the GPU ignores
-    // the dither flag), worked out on a low-priority thread in a fraction of a second.
-    //  fade = true (Home on screen): the old picture stays until the new one is ready, then they
-    //         cross-fade over FADE_MS.
-    //  fade = false (behind another app, at start, or on return): the GPU gradient of the new phase is
-    //         set at once, so the old time of day never shows; the bitmap replaces it when ready.
+    // Swaps the window background only when what should show changes (the time of day, today's picture
+    // or the chosen picture): drawn once by the window, no extra view. The greeting follows the time of
+    // day whatever the background is.
     private void applyPhase(final boolean fade) {
         final int p = phaseNow();
-        if (p == shownPhase) return;
-        shownPhase = p;
-        if (!fade) getWindow().setBackgroundDrawable(background(p));
-        boolean de = "de".equals(java.util.Locale.getDefault().getLanguage());
-        greeting.setText(GREETINGS[p][de ? 0 : 1]);
+        if (p != shownPhase) {
+            shownPhase = p;
+            boolean de = "de".equals(java.util.Locale.getDefault().getLanguage());
+            greeting.setText(GREETINGS[p][de ? 0 : 1]);
+        }
+        String want = backgroundKey();
+        if (!want.equals(shownBg)) showBackground(want, fade ? FADE_MS : 0);
+    }
+
+    // Puts a background on the window: "phase:N" (the time-of-day gradient) or a picture file under bgDir().
+    // The gradient's final picture is a dithered bitmap (dark gradients band visibly on an OLED and the GPU
+    // ignores the dither flag); a photo is scaled to the screen with a dark veil behind the clock and icons.
+    // Both are worked out on one background thread, in a fraction of a second; an older request still
+    // waiting there is skipped (browsing through the background menu).
+    //  fadeMs > 0 (Home on screen): the old picture stays until the new one is ready, then they cross-fade.
+    //  fadeMs = 0 (behind another app, at start, or on return): a gradient is set at once as a GPU gradient,
+    //             so the old time of day never shows; the bitmap replaces it when ready.
+    private void showBackground(final String key, final int fadeMs) {
+        shownBg = key;
+        final int gen = ++bgGen;
+        final boolean isPhase = key.startsWith("phase:");
+        final int p = isPhase ? Integer.parseInt(key.substring(6)) : phaseNow();
+        final File img = isPhase ? null : new File(bgDir(), key);
+        if (isPhase && fadeMs == 0) setBackground(background(p), null);
         final int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
         final float glowR = px(1300);
-        new Thread(() -> {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
-            final Bitmap b = ditheredBackground(PHASE_COLORS[p], w, h, glowR);
+        final long asked = android.os.SystemClock.uptimeMillis();
+        bgWorker.execute(() -> {
+            if (gen != bgGen) return;
+            Bitmap made = img != null ? cachedPhoto(img, w, h) : null;
+            if (made == null) made = ditheredBackground(PHASE_COLORS[p], w, h, glowR); // also if the file is broken
+            final Bitmap b = made;
             runOnUiThread(() -> {
-                if (p != shownPhase || isDestroyed()) return;
-                android.util.Log.i("tvhome", "background ready, phase " + p + (fade && resumed ? " (fading)" : " (swapped quietly)"));
+                if (gen != bgGen || isDestroyed()) { b.recycle(); return; }
+                android.util.Log.i("tvhome", "background ready, " + key + " in " + (android.os.SystemClock.uptimeMillis() - asked) + " ms" + (fadeMs > 0 && resumed ? " (fading)" : " (swapped quietly)"));
                 final BitmapDrawable next = new BitmapDrawable(getResources(), b);
                 final Bitmap prev = shownBitmap;
-                shownBitmap = b;
-                Drawable old = getWindow().getDecorView().getBackground();
-                if (fade && resumed && old != null) {
+                // Fade from the last finished picture, not from a fade still running: that one may hold a
+                // bitmap about to be freed.
+                Drawable old = shownDrawable;
+                if (fadeMs > 0 && resumed && old != null) {
                     final android.graphics.drawable.TransitionDrawable t =
                             new android.graphics.drawable.TransitionDrawable(new Drawable[] {old, next});
                     t.setCrossFadeEnabled(true);
                     getWindow().setBackgroundDrawable(t);
-                    t.startTransition(FADE_MS);
+                    shownDrawable = next;
+                    shownBitmap = b;
+                    t.startTransition(fadeMs);
                     // Afterwards keep only the new picture, then free the old one.
                     handler.postDelayed(() -> {
                         if (getWindow().getDecorView().getBackground() == t) getWindow().setBackgroundDrawable(next);
                         freeLater(prev);
-                    }, FADE_MS + 100);
+                    }, fadeMs + 100);
                 } else {
-                    getWindow().setBackgroundDrawable(next);
+                    setBackground(next, b);
                     freeLater(prev);
                 }
             });
-        }, "background").start();
+        });
+    }
+
+    private void setBackground(Drawable d, Bitmap b) {
+        getWindow().setBackgroundDrawable(d);
+        shownDrawable = d;
+        if (b != null) shownBitmap = b;
+    }
+
+    // ---- Background pictures ----
+    // Chosen in the menu on the settings icon (hold OK): the time of day, a different picture every day,
+    // or one fixed picture. Pictures are not part of the app (photos have their own licences); they are
+    // copied onto the TV with  tvctl.sh backgrounds <IP> <folder>  into this app's own folder:
+    //   .../Android/data/com.ansub.tvhome/files/hintergruende/wechsel/  in the daily change, and can be picked
+    //   .../Android/data/com.ansub.tvhome/files/hintergruende/fest/     can only be picked
+    // Shown in name order; a leading number ("01 Eibsee.jpg") only sets the order. Best at 3840x2160.
+    private static final String BG = "background"; // "phase", "daily" or a file like "wechsel/01 Eibsee.jpg"
+    private static final String DAILY_SET = "wechsel", FIXED_SET = "fest";
+    private static final int DAY_STARTS_AT = 4, PREVIEW_MS = 250;
+    private String shownBg;
+    private int bgGen;
+    private Drawable shownDrawable;
+    private final java.util.concurrent.ExecutorService bgWorker = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "background");
+        t.setPriority(Thread.MIN_PRIORITY);
+        return t;
+    });
+
+    private File bgDir() {
+        File f = getExternalFilesDir(null);
+        return new File(f != null ? f : getFilesDir(), "hintergruende");
+    }
+
+    private String bgChoice() { return getSharedPreferences(PREFS, 0).getString(BG, "phase"); }
+
+    // What the background should be right now, as for showBackground. A missing picture falls back to the time of day.
+    private String backgroundKey() { return resolveBg(bgChoice()); }
+
+    private String resolveBg(String choice) {
+        if ("daily".equals(choice)) {
+            String d = dailyPicture();
+            if (d != null) return d;
+        } else if (!"phase".equals(choice) && new File(bgDir(), choice).isFile()) {
+            return choice;
+        }
+        return "phase:" + phaseNow();
+    }
+
+    // Pictures in one set, as "set/file", in name order.
+    private List<String> pictures(String set) {
+        List<String> out = new ArrayList<>();
+        File[] files = new File(bgDir(), set).listFiles();
+        if (files == null) return out;
+        for (File f : files) {
+            String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+            if (f.isFile() && !n.startsWith(".") && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")))
+                out.add(set + "/" + f.getName());
+        }
+        Collections.sort(out);
+        return out;
+    }
+
+    // "wechsel/01 Eibsee.jpg" -> "Eibsee"
+    private static String pictureName(String key) {
+        String n = key.substring(key.lastIndexOf('/') + 1);
+        int dot = n.lastIndexOf('.');
+        if (dot > 0) n = n.substring(0, dot);
+        return n.replaceFirst("^\\d+[\\s._-]*", "");
+    }
+
+    // Today's picture of the daily change. A day starts at DAY_STARTS_AT in the morning; the new picture is
+    // drawn at random and is never yesterday's. Remembered, so it stays the same all day.
+    private String dailyPicture() {
+        List<String> pool = pictures(DAILY_SET);
+        if (pool.isEmpty()) return null;
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.add(java.util.Calendar.HOUR_OF_DAY, -DAY_STARTS_AT);
+        String day = c.get(java.util.Calendar.YEAR) + "-" + c.get(java.util.Calendar.DAY_OF_YEAR);
+        SharedPreferences prefs = getSharedPreferences(PREFS, 0);
+        String last = prefs.getString("dailyPicture", null);
+        if (day.equals(prefs.getString("dailyDay", null)) && pool.contains(last)) return last;
+        List<String> choices = new ArrayList<>(pool);
+        if (choices.size() > 1) choices.remove(last);
+        String pick = choices.get(new java.util.Random().nextInt(choices.size()));
+        prefs.edit().putString("dailyDay", day).putString("dailyPicture", pick).apply();
+        return pick;
+    }
+
+    // Shortly after start, quietly makes the screen-size copies and the small menu pictures of all
+    // pictures, so the first time through the background menu is as quick as later ones.
+    private void prepareBackgrounds() {
+        final List<String> all = pictures(DAILY_SET);
+        all.addAll(pictures(FIXED_SET));
+        final int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
+        thumbWorker.execute(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_LOWEST);
+            // Copies of pictures that were replaced or removed go.
+            java.util.Set<String> keep = new java.util.HashSet<>();
+            for (String key : all) keep.add(cacheFile(new File(bgDir(), key), w, h).getName());
+            File[] old = new File(getCacheDir(), "hintergruende").listFiles();
+            if (old != null) for (File f : old) if (!keep.contains(f.getName())) f.delete();
+            for (String key : all) {
+                if (isDestroyed()) return;
+                File img = new File(bgDir(), key);
+                File cached = cacheFile(img, w, h);
+                if (!cached.isFile()) {
+                    Bitmap b = cachedPhoto(img, w, h);
+                    if (b != null) b.recycle();
+                }
+                thumbNow(key);
+            }
+        });
+    }
+
+    private File cacheFile(File img, int w, int h) {
+        return new File(new File(getCacheDir(), "hintergruende"), Integer.toHexString((img.getPath() + "|" + img.lastModified()
+                + "|" + img.length() + "|" + w + "x" + h).hashCode()) + ".jpg");
+    }
+
+    // A picture is made once at screen size (with its veil) and kept as a JPEG in the app's cache: loading
+    // that takes a fraction of the time a 4K original does, so browsing the menu stays quick. Android may
+    // clear the cache; then it is simply made again.
+    private Bitmap cachedPhoto(File img, int w, int h) {
+        File cached = cacheFile(img, w, h), dir = cached.getParentFile();
+        if (cached.isFile()) {
+            Bitmap b = BitmapFactory.decodeFile(cached.getPath());
+            if (b != null && b.getWidth() == w && b.getHeight() == h) return b;
+            if (b != null) b.recycle();
+        }
+        Bitmap b = photo(img, w, h);
+        if (b == null) return null;
+        try {
+            dir.mkdirs();
+            File tmp = new File(dir, cached.getName() + "." + Thread.currentThread().getId() + ".tmp"); // two threads may make the same one
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+                b.compress(Bitmap.CompressFormat.JPEG, 94, out);
+            }
+            if (!tmp.renameTo(cached)) tmp.delete();
+        } catch (Exception e) {
+            android.util.Log.w("tvhome", "could not cache " + img, e);
+        }
+        return b;
+    }
+
+    // A photo filling the screen (center-cropped), with the same dark veil as the mockup: darker at the top
+    // left behind the clock, at the top right behind the icons, and towards the bottom.
+    private static Bitmap photo(File f, int w, int h) {
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getPath(), o);
+            if (o.outWidth <= 0 || o.outHeight <= 0) return null;
+            int sample = 1;
+            while (o.outWidth / (sample * 2) >= w && o.outHeight / (sample * 2) >= h) sample *= 2;
+            o = new BitmapFactory.Options();
+            o.inSampleSize = sample;
+            Bitmap src = BitmapFactory.decodeFile(f.getPath(), o);
+            if (src == null) return null;
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            float k = Math.max((float) w / src.getWidth(), (float) h / src.getHeight());
+            float dw = src.getWidth() * k, dh = src.getHeight() * k;
+            c.drawBitmap(src, null, new RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2),
+                    new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG));
+            src.recycle();
+            Paint veil = new Paint(Paint.DITHER_FLAG);
+            veil.setShader(new LinearGradient(0, 0, 0, h, new int[] {0x4D000000, 0x1F000000, 0x26000000, 0x73000000},
+                    new float[] {0f, 0.4f, 0.6f, 1f}, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, veil);
+            veil.setShader(new RadialGradient(0.12f * w, 0.18f * h, 0.42f * w, new int[] {0x80000000, 0x00000000},
+                    null, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, veil);
+            veil.setShader(new RadialGradient(0.85f * w, 0.08f * h, 0.28f * w, new int[] {0x66000000, 0x00000000},
+                    null, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, veil);
+            return out;
+        } catch (Throwable t) { // out of memory or a broken file: the time of day instead
+            android.util.Log.w("tvhome", "background picture failed: " + f, t);
+            return null;
+        }
     }
 
     // An 8 MB background bitmap and its GPU copy would otherwise linger until a garbage collection, which
@@ -1498,7 +1708,7 @@ public class MainActivity extends Activity {
         lg.start(true, tv); // the TV asks "Allow?"; LgTv reports progress with onStatus
     }
 
-    // Hold OK on the settings icon: connect or disconnect the TV, or open Android's settings.
+    // Hold OK on the settings icon: connect or disconnect the TV, pick the background, or open Android's settings.
     private void showTvMenu(View anchor) {
         final boolean paired = lg.paired();
         String status = paired ? "Verbunden mit " + lg.model() : null;
@@ -1506,32 +1716,40 @@ public class MainActivity extends Activity {
         String[] subs;
         boolean[] enabled;
         Boolean[] switches;
+        final int bgAt;
+        String bgNow = backgroundLabel(bgChoice()) + "  ›";
         if (paired) {
-            items = new String[] {"Gerätestatus anzeigen", "Trennen", "Android-Einstellungen"};
-            subs = new String[] {null, null, null};
-            enabled = new boolean[] {true, true, true};
-            switches = new Boolean[] {showDeviceDots(), null, null};
+            items = new String[] {"Gerätestatus anzeigen", "Hintergrund", "Trennen", "Android-Einstellungen"};
+            subs = new String[] {null, bgNow, null, null};
+            enabled = new boolean[] {true, true, true, true};
+            switches = new Boolean[] {showDeviceDots(), null, null, null};
+            bgAt = 1;
         } else {
             // One "Connect TV" per LG TV on the network, each with its name, so the right one can be
             // picked when there are several. A wrong one is simply disconnected again.
             final List<LgTv.Found> found = lgFound;
             int n = found == null || found.isEmpty() ? 1 : found.size();
-            items = new String[n + 1];
-            subs = new String[n + 1];
-            enabled = new boolean[n + 1];
-            switches = new Boolean[n + 1];
+            items = new String[n + 2];
+            subs = new String[n + 2];
+            enabled = new boolean[n + 2];
+            switches = new Boolean[n + 2];
             for (int i = 0; i < n; i++) {
                 items[i] = "Fernseher verbinden";
                 subs[i] = found == null ? "suche …" : found.isEmpty() ? "kein LG im Netz" : found.get(i).name;
                 enabled[i] = found != null && !found.isEmpty();
             }
-            items[n] = "Android-Einstellungen";
+            bgAt = n;
+            items[n] = "Hintergrund";
+            subs[n] = bgNow;
             enabled[n] = true;
+            items[n + 1] = "Android-Einstellungen";
+            enabled[n + 1] = true;
             if (found == null || found.isEmpty()) lookForLg();
         }
         final List<LgTv.Found> choices = lgFound;
         menu(anchor, status, items, subs, enabled, switches, which -> {
             if (which == items.length - 1) { open(SETTINGS); return; }
+            if (which == bgAt) { showBackgroundMenu(anchor, bgAt); return; }
             if (paired && which == 0) { // the switch: the menu stays open, the dots follow at once
                 boolean show = !showDeviceDots();
                 getSharedPreferences(PREFS, 0).edit().putBoolean(SHOW_DEVICE_DOTS, show).apply();
@@ -1550,6 +1768,319 @@ public class MainActivity extends Activity {
             } else if (choices != null && which < choices.size()) {
                 connectLg(choices.get(which));
             }
+        });
+    }
+
+    private String backgroundLabel(String choice) {
+        if ("phase".equals(choice) || !"daily".equals(choice) && !new File(bgDir(), choice).isFile()) return "Tageszeit";
+        return "daily".equals(choice) ? "Täglich wechselnd" : pictureName(choice);
+    }
+
+    // The background menu, opened from "Hintergrund" in the menu on the settings icon: the time of day and
+    // the daily change side by side, then every picture as a tile, three to a row; it scrolls when they don't
+    // all fit. All four arrows move around. The background follows the focus at once as a preview; OK keeps
+    // it, Back puts the old one back. Either way it returns to the menu on the settings icon.
+    private void showBackgroundMenu(final View anchor, final int backAt) {
+        final Dialog d = new Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
+        final int pad = px(14), w = px(880), inner = w - 2 * pad;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad, pad, pad, pad);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(px(26));
+        bg.setColor(0xFF231D1F);
+        bg.setStroke(Math.max(1, px(2)), 0x1FFFFFFF);
+        box.setBackground(bg);
+
+        TextView head = text(px(24), 0x99FFFFFF, regular);
+        head.setText("‹  Hintergrund");
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(px(22), 0, px(22), 0);
+        box.addView(head, new LinearLayout.LayoutParams(-1, px(56)));
+
+        final ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalFadingEdgeEnabled(true);
+        scroll.setFadingEdgeLength(px(70));
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.setScrollBarStyle(View.SCROLLBARS_OUTSIDE_OVERLAY);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(px(8), px(4), px(8), px(8));
+        scroll.addView(content, new FrameLayout.LayoutParams(-1, -2));
+        box.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        final String before = bgChoice();
+        final boolean[] kept = {false};
+        final List<String> daily = pictures(DAILY_SET), all = new ArrayList<>(daily);
+        all.addAll(pictures(FIXED_SET));
+        final List<View> checks = new ArrayList<>();
+        final List<String> checkKeys = new ArrayList<>();
+        View[] focusFirst = {null};
+
+        // Picking: preview on focus, keep on OK.
+        final Wire wire = (v, choice) -> {
+            v.setFocusable(true);
+            v.setOnFocusChangeListener((x, has) -> {
+                paintFocus(v, has);
+                if (!has) return;
+                String key = resolveBg(choice);
+                if (!key.equals(shownBg)) showBackground(key, PREVIEW_MS);
+            });
+            v.setOnClickListener(x -> {
+                getSharedPreferences(PREFS, 0).edit().putString(BG, choice).apply();
+                kept[0] = true;
+                d.dismiss();
+                reopenMenu(anchor, backAt);
+            });
+            if (focusFirst[0] == null || choice.equals(before)) focusFirst[0] = v;
+        };
+
+        // Top row: time of day and the daily change, as two wide cards.
+        LinearLayout cards = new LinearLayout(this);
+        cards.setOrientation(LinearLayout.HORIZONTAL);
+        int cardW = (inner - 2 * px(8) - px(12)) / 2;
+        String today = dailyPicture();
+        String[] cardChoice = {"phase", "daily"};
+        for (int i = 0; i < 2; i++) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setPadding(px(16), px(12), px(16), px(12));
+            card.setBackground(focusBackground(card, null));
+            ImageView pic = new ImageView(this);
+            pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            rounded(pic, px(8));
+            if (i == 0) pic.setImageDrawable(background(phaseNow()));
+            card.addView(pic, new LinearLayout.LayoutParams(px(112), px(63)));
+            LinearLayout words = new LinearLayout(this);
+            words.setOrientation(LinearLayout.VERTICAL);
+            TextView name = text(px(26), 0xE0FFFFFF, regular);
+            name.setText(i == 0 ? "Tageszeit" : "Täglich wechselnd");
+            name.setSingleLine(true);
+            words.addView(name);
+            TextView small = text(px(20), 0x8CFFFFFF, regular);
+            small.setSingleLine(true);
+            small.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            small.setText(i == 0 ? "Farbverlauf nach Uhrzeit" : today == null ? "keine Bilder" : "heute: " + pictureName(today));
+            words.addView(small);
+            LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(0, -2, 1f);
+            wl.leftMargin = px(16);
+            card.addView(words, wl);
+            TextView check = check();
+            card.addView(check);
+            checks.add(check);
+            checkKeys.add(cardChoice[i]);
+            if (i == 1 && daily.isEmpty()) {
+                card.setAlpha(0.4f);
+            } else {
+                wire.to(card, cardChoice[i]);
+            }
+            if (i == 1) loadMosaic(pic, daily);
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(cardW, -2);
+            if (i == 1) cl.leftMargin = px(12);
+            cards.addView(card, cl);
+        }
+        content.addView(cards);
+
+        TextView label = text(px(22), 0x80FFFFFF, regular);
+        label.setText(all.isEmpty() ? "Noch keine Bilder auf dem TV" : "Bilder");
+        label.setPadding(px(14), px(18), 0, px(10));
+        content.addView(label);
+
+        // The pictures, three to a row.
+        int gap = px(14), tileW = (inner - 2 * px(8) - 2 * gap) / 3, picH = Math.round((tileW - 2 * px(8)) * 9f / 16f);
+        LinearLayout row = null;
+        for (int i = 0; i < all.size(); i++) {
+            final String key = all.get(i);
+            if (i % 3 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
+                if (i > 0) rl.topMargin = gap;
+                content.addView(row, rl);
+            }
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setPadding(px(8), px(8), px(8), px(6));
+            FrameLayout frame = new FrameLayout(this);
+            ImageView pic = new ImageView(this);
+            pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            rounded(pic, px(9));
+            frame.addView(pic, new FrameLayout.LayoutParams(-1, -1));
+            GradientDrawable ring = new GradientDrawable();
+            ring.setCornerRadius(px(9));
+            ring.setStroke(px(3), Color.TRANSPARENT);
+            frame.setForeground(ring);
+            tile.addView(frame, new LinearLayout.LayoutParams(-1, picH));
+            LinearLayout line = new LinearLayout(this);
+            line.setGravity(Gravity.CENTER_VERTICAL);
+            line.setPadding(px(4), px(8), 0, 0);
+            TextView name = text(px(23), 0xCCFFFFFF, regular);
+            name.setText(pictureName(key));
+            name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            line.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView check = check();
+            line.addView(check);
+            checks.add(check);
+            checkKeys.add(key);
+            tile.addView(line);
+            tile.setBackground(focusBackground(tile, ring));
+            wire.to(tile, key);
+            loadThumb(pic, key);
+            LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(tileW, -2);
+            if (i % 3 > 0) tl.leftMargin = gap;
+            row.addView(tile, tl);
+        }
+        // The orange tick at the background in use.
+        for (int i = 0; i < checks.size(); i++) checks.get(i).setVisibility(checkKeys.get(i).equals(before) ? View.VISIBLE : View.INVISIBLE);
+
+        d.setContentView(box);
+        if (focusFirst[0] != null) focusFirst[0].requestFocus();
+        d.setOnKeyListener((x, code, ev) -> {
+            if (code != KeyEvent.KEYCODE_BACK) return false;
+            if (ev.getAction() == KeyEvent.ACTION_UP) { d.dismiss(); reopenMenu(anchor, backAt); }
+            return true;
+        });
+        d.setOnDismissListener(x -> {
+            if (openMenu == d) openMenu = null;
+            if (!kept[0]) { // closed without OK: the old background again
+                String key = backgroundKey();
+                if (!key.equals(shownBg)) showBackground(key, resumed ? PREVIEW_MS : 0);
+            }
+        });
+
+        // As tall as it needs, but never past the bottom of the screen: then it scrolls.
+        content.measure(View.MeasureSpec.makeMeasureSpec(inner, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED);
+        int[] at = new int[2];
+        anchor.getLocationOnScreen(at);
+        int screenW = getResources().getDisplayMetrics().widthPixels, screenH = getResources().getDisplayMetrics().heightPixels;
+        int y = at[1] + Math.round(anchor.getHeight() * anchor.getScaleY()) + px(64);
+        int h = Math.min(2 * pad + px(56) + content.getMeasuredHeight(), screenH - y - px(40));
+        Window win = d.getWindow();
+        win.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        win.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        win.setGravity(Gravity.TOP | Gravity.START);
+        android.view.WindowManager.LayoutParams lp = win.getAttributes();
+        lp.x = screenW - w - px(48);
+        lp.y = y;
+        lp.width = w;
+        lp.height = h;
+        win.setAttributes(lp);
+        final TextView caption = captionOf.get(anchor);
+        if (caption != null) caption.setVisibility(View.INVISIBLE);
+        openMenu = d;
+        d.show();
+    }
+
+    // Back from the background menu: the menu on the settings icon again, on "Hintergrund".
+    private void reopenMenu(View anchor, int focusAt) {
+        if (!resumed || !anchor.isAttachedToWindow()) return;
+        menuFocusAt = focusAt;
+        showTvMenu(anchor);
+    }
+    private int menuFocusAt = -1;
+
+    private interface Wire { void to(View v, String choice); }
+
+    // Light grey behind the focused entry; for a picture tile also a white ring round the picture
+    // (both changed by paintFocus).
+    private Drawable focusBackground(View v, GradientDrawable ring) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(px(14));
+        g.setColor(Color.TRANSPARENT);
+        v.setTag(R_RING, ring);
+        return g;
+    }
+    private static final int R_RING = 0x7f0b0001; // a view tag id of our own
+
+    private void paintFocus(View v, boolean has) {
+        if (v.getBackground() instanceof GradientDrawable) ((GradientDrawable) v.getBackground()).setColor(has ? 0x2EFFFFFF : Color.TRANSPARENT);
+        Object ring = v.getTag(R_RING);
+        if (ring instanceof GradientDrawable) ((GradientDrawable) ring).setStroke(px(3), has ? Color.WHITE : Color.TRANSPARENT);
+    }
+
+    private void rounded(ImageView v, int r) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setCornerRadius(r);
+        shape.setColor(0xFF2E2729);
+        v.setBackground(shape);
+        v.setClipToOutline(true);
+    }
+
+    private TextView check() {
+        TextView t = text(px(26), DOT_ORANGE, semibold);
+        t.setText("✓");
+        t.setPadding(px(10), 0, 0, 0);
+        return t;
+    }
+
+    // Small pictures for the menu, kept while Home runs (a few hundred KB for a dozen pictures).
+    private final java.util.Map<String, Bitmap> thumbs = new java.util.HashMap<>();
+    private final java.util.concurrent.ExecutorService thumbWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    private Bitmap thumbNow(String key) {
+        File f = new File(bgDir(), key);
+        String id = key + "@" + f.lastModified();
+        synchronized (thumbs) { if (thumbs.containsKey(id)) return thumbs.get(id); }
+        Bitmap b = null;
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(f.getPath(), o);
+            int sample = 1, want = px(320);
+            while (o.outWidth / (sample * 2) >= want) sample *= 2;
+            o = new BitmapFactory.Options();
+            o.inSampleSize = sample;
+            b = BitmapFactory.decodeFile(f.getPath(), o);
+        } catch (Throwable ignored) {}
+        if (b != null) synchronized (thumbs) { thumbs.put(id, b); } // a failed one is tried again next time
+        return b;
+    }
+
+    private void loadThumb(final ImageView v, final String key) {
+        thumbWorker.execute(() -> {
+            final Bitmap b = thumbNow(key);
+            if (b != null) runOnUiThread(() -> v.setImageBitmap(b));
+        });
+    }
+
+    // The daily change's card: four of its pictures in a square, with a shuffle sign in the middle.
+    private void loadMosaic(final ImageView v, final List<String> pool) {
+        if (pool.isEmpty()) return;
+        final int w = px(224), h = px(126);
+        thumbWorker.execute(() -> {
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            c.drawColor(0xFF231D1F);
+            int gap = Math.max(1, px(3)), cw = (w - gap) / 2, ch = (h - gap) / 2;
+            Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+            for (int i = 0; i < 4; i++) {
+                Bitmap t = thumbNow(pool.get(i * pool.size() / 4 % pool.size()));
+                if (t == null) continue;
+                int x = (i % 2) * (cw + gap), y = (i / 2) * (ch + gap);
+                float k = Math.max((float) cw / t.getWidth(), (float) ch / t.getHeight());
+                int sw = Math.round(cw / k), sh = Math.round(ch / k);
+                int sx = (t.getWidth() - sw) / 2, sy = (t.getHeight() - sh) / 2;
+                c.drawBitmap(t, new android.graphics.Rect(sx, sy, sx + sw, sy + sh), new android.graphics.Rect(x, y, x + cw, y + ch), p);
+            }
+            float r = h * 0.3f, cx = w / 2f, cy = h / 2f;
+            Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
+            dot.setColor(0x8C000000);
+            c.drawCircle(cx, cy, r, dot);
+            // The shuffle sign, drawn on a 24 x 24 grid.
+            Path s = new Path();
+            float u = r * 1.25f / 24f, ox = cx - 12 * u, oy = cy - 12 * u;
+            float[][] lines = {{16, 3, 21, 3}, {21, 3, 21, 8}, {4, 20, 21, 3}, {21, 16, 21, 21}, {21, 21, 16, 21}, {15, 15, 21, 21}, {4, 4, 9, 9}};
+            for (float[] l : lines) { s.moveTo(ox + l[0] * u, oy + l[1] * u); s.lineTo(ox + l[2] * u, oy + l[3] * u); }
+            Paint pen = new Paint(Paint.ANTI_ALIAS_FLAG);
+            pen.setStyle(Paint.Style.STROKE);
+            pen.setStrokeWidth(2.2f * u);
+            pen.setStrokeCap(Paint.Cap.ROUND);
+            pen.setStrokeJoin(Paint.Join.ROUND);
+            pen.setColor(Color.WHITE);
+            c.drawPath(s, pen);
+            runOnUiThread(() -> v.setImageBitmap(out));
         });
     }
 
@@ -1651,7 +2182,11 @@ public class MainActivity extends Activity {
             h += rowH;
         }
         d.setContentView(box);
-        if (first != null) first.requestFocus();
+        View at0 = menuFocusAt >= 0 && menuFocusAt < box.getChildCount() - (status != null ? 1 : 0)
+                ? box.getChildAt(menuFocusAt + (status != null ? 1 : 0)) : null;
+        menuFocusAt = -1;
+        if (at0 != null && at0.isFocusable()) at0.requestFocus();
+        else if (first != null) first.requestFocus();
 
         int[] at = new int[2];
         anchor.getLocationOnScreen(at);

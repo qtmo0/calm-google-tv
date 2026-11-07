@@ -108,6 +108,12 @@ nicht löschen, `undo` braucht es.
   GPU-Zeichnen nicht. Startbildschirm-Hintergrund wird deshalb einmal pro Tageszeit als Bild mit Rauschen
   berechnet; der Schoner dithert im Shader (±1 Stufe, pro Bild wechselnd, zu Schwarz hin ausgeblendet).
 - Design-Entwürfe vorher als HTML-Mockup zeigen (`mockups/`), erst nach Zustimmung einbauen.
+- **Hintergrund (Menü am Zahnrad → „Hintergrund“):** `phase` (Tageszeit), `daily` oder eine Datei, gespeichert als
+  Einstellung `background`. Bilder liegen nur auf dem TV unter
+  `/sdcard/Android/data/com.ansub.tvhome/files/hintergruende/{wechsel,fest}` (aufspielen: `tvctl.sh backgrounds`,
+  setzt auch Leserechte – von adb angelegte Ordner kann die App sonst nicht lesen). **Fotos nie ins Repo** (Lizenz).
+  `wechsel/` = täglicher Wechsel um 4 Uhr (Zufall, nie wie gestern), `fest/` nur auswählbar. Die App legt
+  bildschirmgroße Kopien im Cache an (Vorschau ~70 ms statt ~0,9 s aus 4K); Log: `background ready, … in N ms`.
 - **Tageszeit-Wechsel testen**, ohne die Uhr des TVs zu verstellen (nur per adb möglich, Apps dürfen das nicht):
   `adb shell am broadcast -a com.ansub.tvhome.TEST_PHASE --ei phase 2` (0 Morgen, 1 Tag, 2 Abend, 3 Nacht;
   `-1` = wieder echte Uhrzeit – danach **immer** zurückstellen). Wirkt wie die volle Stunde: Ist Home offen,

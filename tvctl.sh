@@ -25,13 +25,16 @@
 #   lg-pair     <IP> [LG_IP]              Startbildschirm mit einem LG-Fernseher (webOS) koppeln: HDMI-Geräte
 #                                         in der Leiste, Umschalten per OK. Der LG fragt einmal "Zulassen?".
 #                                         Bei mehreren LGs im Netz die IP des richtigen LG mitgeben.
+#   backgrounds <IP> <ordner>             Hintergrundbilder für den Startbildschirm aufspielen (ersetzt die alten).
+#                                         Im Ordner: wechsel/ (im täglichen Wechsel) und fest/ (nur zum Auswählen),
+#                                         Bilder am besten 3840x2160 JPG, "01 Name.jpg" (Nummer = Reihenfolge)
 #   reboot      <IP>                      30 s warten, neu starten, Start prüfen
 #   undo        <IP>                      alles laut Sicherung zurück
 set -e
 cd "$(dirname "$0")"
 
 CMD="$1"; TARGET="$2"
-[ -n "$CMD" ] && [ -n "$TARGET" ] || { sed -n '2,30p' "$0"; exit 1; }
+[ -n "$CMD" ] && [ -n "$TARGET" ] || { sed -n '2,33p' "$0"; exit 1; }
 shift 2
 command -v adb >/dev/null 2>&1 || { echo "adb fehlt. Mac: brew install android-platform-tools" >&2; exit 1; }
 case "$TARGET" in *:*) TV=$TARGET ;; *) TV=$TARGET:5555 ;; esac
@@ -229,6 +232,26 @@ lg-pair)
   fi
   ;;
 
+backgrounds)
+  SRC="$1"
+  [ -d "$SRC/wechsel" ] || [ -d "$SRC/fest" ] || { echo "Im Ordner fehlen wechsel/ und fest/: $SRC" >&2; exit 1; }
+  tv pm list packages com.ansub.tvhome | grep -q com.ansub.tvhome || { echo "Erst den Startbildschirm installieren (home)." >&2; exit 1; }
+  BG=/sdcard/Android/data/com.ansub.tvhome/files/hintergruende
+  tv rm -rf "$BG"
+  tv mkdir -p "$BG"
+  for set in wechsel fest; do
+    [ -d "$SRC/$set" ] || continue
+    tv mkdir -p "$BG/$set"
+    for f in "$SRC/$set"/*; do
+      case "$f" in *.jpg|*.jpeg|*.png|*.webp|*.JPG|*.JPEG|*.PNG) adb -s "$TV" push "$f" "$BG/$set/" >/dev/null ;; esac
+    done
+  done
+  # adb legt Ordner nur für sich selbst lesbar an; der Startbildschirm muss sie lesen können.
+  tv chmod -R a+rX "$BG"
+  echo "Auf dem TV:"; tv ls -R "$BG"
+  log "Hintergrundbilder aufgespielt (wechsel: $(ls "$SRC/wechsel" 2>/dev/null | wc -l | tr -d ' '), fest: $(ls "$SRC/fest" 2>/dev/null | wc -l | tr -d ' '))" "adb shell rm -rf $BG"
+  ;;
+
 reboot)
   echo "Warte 30 s, damit Android alles speichert…"; sleep 30
   adb -s "$TV" reboot
@@ -259,5 +282,5 @@ undo)
   echo "Fertig. Jetzt neu starten: sh tvctl.sh reboot $TARGET"
   ;;
 
-*) echo "Unbekannter Befehl: $CMD" >&2; sed -n '2,30p' "$0"; exit 1 ;;
+*) echo "Unbekannter Befehl: $CMD" >&2; sed -n '2,33p' "$0"; exit 1 ;;
 esac
