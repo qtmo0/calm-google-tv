@@ -467,7 +467,8 @@ public class MainActivity extends Activity {
         final int gen = ++bgGen;
         final boolean isPhase = key.startsWith("phase:");
         final int p = isPhase ? Integer.parseInt(key.substring(6)) : phaseNow();
-        final File img = isPhase ? null : new File(bgDir(), key);
+        final boolean dimmed = key.endsWith(DIM_MARK);
+        final File img = isPhase ? null : new File(bgDir(), dimmed ? key.substring(0, key.length() - DIM_MARK.length()) : key);
         if (isPhase && fadeMs == 0) setBackground(background(p), null);
         final int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
         final float glowR = px(1300);
@@ -475,6 +476,7 @@ public class MainActivity extends Activity {
         bgWorker.execute(() -> {
             if (gen != bgGen) return;
             Bitmap made = img != null ? cachedPhoto(img, w, h) : null;
+            if (made != null && dimmed) new Canvas(made).drawColor(NIGHT_LAYER);
             if (made == null) made = ditheredBackground(PHASE_COLORS[p], w, h, glowR); // also if the file is broken
             final Bitmap b = made;
             runOnUiThread(() -> {
@@ -536,19 +538,31 @@ public class MainActivity extends Activity {
         return new File(f != null ? f : getFilesDir(), "hintergruende");
     }
 
+    // "Fotos nachts dunkler" (switch in the menu on the settings icon, off at first): from NIGHT_FROM to
+    // NIGHT_TO a photo gets a dark layer, calmer in a dark room and kinder to the OLED. The hourly check
+    // fades it in and out on the hour. The gradient is dark at night anyway, so it stays as it is.
+    private static final String NIGHT_DIM = "nightDim", NIGHT_LABEL = "22–6 Uhr", DIM_MARK = "#dim";
+    private static final int NIGHT_FROM = 22, NIGHT_TO = 6, NIGHT_LAYER = 0x73000000; // about 45 % darker
+
+    private boolean nightDim() { return getSharedPreferences(PREFS, 0).getBoolean(NIGHT_DIM, false); }
+
+    private static boolean isNight() {
+        if (phaseOverride >= 0) return phaseOverride == 3; // TEST_PHASE 3 (night) tests this too
+        int h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY);
+        return h >= NIGHT_FROM || h < NIGHT_TO;
+    }
+
     private String bgChoice() { return getSharedPreferences(PREFS, 0).getString(BG, "phase"); }
 
     // What the background should be right now, as for showBackground. A missing picture falls back to the time of day.
     private String backgroundKey() { return resolveBg(bgChoice()); }
 
     private String resolveBg(String choice) {
-        if ("daily".equals(choice)) {
-            String d = dailyPicture();
-            if (d != null) return d;
-        } else if (!"phase".equals(choice) && new File(bgDir(), choice).isFile()) {
-            return choice;
-        }
-        return "phase:" + phaseNow();
+        String pic = null;
+        if ("daily".equals(choice)) pic = dailyPicture();
+        else if (!"phase".equals(choice) && new File(bgDir(), choice).isFile()) pic = choice;
+        if (pic == null) return "phase:" + phaseNow();
+        return nightDim() && isNight() ? pic + DIM_MARK : pic;
     }
 
     // Pictures in one set, as "set/file", in name order.
@@ -628,7 +642,9 @@ public class MainActivity extends Activity {
     private Bitmap cachedPhoto(File img, int w, int h) {
         File cached = cacheFile(img, w, h), dir = cached.getParentFile();
         if (cached.isFile()) {
-            Bitmap b = BitmapFactory.decodeFile(cached.getPath());
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inMutable = true; // the night layer is drawn onto it
+            Bitmap b = BitmapFactory.decodeFile(cached.getPath(), o);
             if (b != null && b.getWidth() == w && b.getHeight() == h) return b;
             if (b != null) b.recycle();
         }
@@ -1718,21 +1734,22 @@ public class MainActivity extends Activity {
         Boolean[] switches;
         final int bgAt;
         String bgNow = backgroundLabel(bgChoice()) + "  ›";
+        final boolean dim = nightDim();
         if (paired) {
-            items = new String[] {"Gerätestatus anzeigen", "Hintergrund", "Trennen", "Android-Einstellungen"};
-            subs = new String[] {null, bgNow, null, null};
-            enabled = new boolean[] {true, true, true, true};
-            switches = new Boolean[] {showDeviceDots(), null, null, null};
+            items = new String[] {"Gerätestatus anzeigen", "Hintergrund", "Fotos nachts dunkler", "Trennen", "Android-Einstellungen"};
+            subs = new String[] {null, bgNow, NIGHT_LABEL, null, null};
+            enabled = new boolean[] {true, true, true, true, true};
+            switches = new Boolean[] {showDeviceDots(), null, dim, null, null};
             bgAt = 1;
         } else {
             // One "Connect TV" per LG TV on the network, each with its name, so the right one can be
             // picked when there are several. A wrong one is simply disconnected again.
             final List<LgTv.Found> found = lgFound;
             int n = found == null || found.isEmpty() ? 1 : found.size();
-            items = new String[n + 2];
-            subs = new String[n + 2];
-            enabled = new boolean[n + 2];
-            switches = new Boolean[n + 2];
+            items = new String[n + 3];
+            subs = new String[n + 3];
+            enabled = new boolean[n + 3];
+            switches = new Boolean[n + 3];
             for (int i = 0; i < n; i++) {
                 items[i] = "Fernseher verbinden";
                 subs[i] = found == null ? "suche …" : found.isEmpty() ? "kein LG im Netz" : found.get(i).name;
@@ -1742,14 +1759,23 @@ public class MainActivity extends Activity {
             items[n] = "Hintergrund";
             subs[n] = bgNow;
             enabled[n] = true;
-            items[n + 1] = "Android-Einstellungen";
+            items[n + 1] = "Fotos nachts dunkler";
+            subs[n + 1] = NIGHT_LABEL;
             enabled[n + 1] = true;
+            switches[n + 1] = dim;
+            items[n + 2] = "Android-Einstellungen";
+            enabled[n + 2] = true;
             if (found == null || found.isEmpty()) lookForLg();
         }
         final List<LgTv.Found> choices = lgFound;
         menu(anchor, status, items, subs, enabled, switches, which -> {
             if (which == items.length - 1) { open(SETTINGS); return; }
             if (which == bgAt) { showBackgroundMenu(anchor, bgAt); return; }
+            if (which == bgAt + 1) { // the switch: the menu stays open; at night the picture fades at once
+                getSharedPreferences(PREFS, 0).edit().putBoolean(NIGHT_DIM, !nightDim()).apply();
+                applyPhase(true);
+                return;
+            }
             if (paired && which == 0) { // the switch: the menu stays open, the dots follow at once
                 boolean show = !showDeviceDots();
                 getSharedPreferences(PREFS, 0).edit().putBoolean(SHOW_DEVICE_DOTS, show).apply();
@@ -1765,7 +1791,7 @@ public class MainActivity extends Activity {
                 lgFound = null;
                 buildTiles();
                 android.widget.Toast.makeText(this, "Fernseher getrennt", android.widget.Toast.LENGTH_SHORT).show();
-            } else if (choices != null && which < choices.size()) {
+            } else if (choices != null && which < choices.size() && which < bgAt) {
                 connectLg(choices.get(which));
             }
         });

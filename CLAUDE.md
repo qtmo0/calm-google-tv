@@ -113,6 +113,8 @@ nicht löschen, `undo` braucht es.
   `/sdcard/Android/data/com.ansub.tvhome/files/hintergruende/{wechsel,fest}` (aufspielen: `tvctl.sh backgrounds`,
   setzt auch Leserechte – von adb angelegte Ordner kann die App sonst nicht lesen). **Fotos nie ins Repo** (Lizenz).
   `wechsel/` = täglicher Wechsel um 4 Uhr (Zufall, nie wie gestern), `fest/` nur auswählbar. Die App legt
+  Schalter „Fotos nachts dunkler“ (Einstellung `nightDim`, anfangs aus): 22–6 Uhr eine dunkle Schicht (~45 %)
+  auf Fotos, ein-/ausgeblendet zur vollen Stunde; `TEST_PHASE 3` gilt dabei als Nacht, `1` als Tag. Die App legt
   bildschirmgroße Kopien im Cache an (Vorschau ~70 ms statt ~0,9 s aus 4K); Log: `background ready, … in N ms`.
 - **Tageszeit-Wechsel testen**, ohne die Uhr des TVs zu verstellen (nur per adb möglich, Apps dürfen das nicht):
   `adb shell am broadcast -a com.ansub.tvhome.TEST_PHASE --ei phase 2` (0 Morgen, 1 Tag, 2 Abend, 3 Nacht;
