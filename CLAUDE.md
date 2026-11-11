@@ -108,11 +108,11 @@ nicht löschen, `undo` braucht es.
   GPU-Zeichnen nicht. Startbildschirm-Hintergrund wird deshalb einmal pro Tageszeit als Bild mit Rauschen
   berechnet; der Schoner dithert im Shader (±1 Stufe, pro Bild wechselnd, zu Schwarz hin ausgeblendet).
 - Design-Entwürfe vorher als HTML-Mockup zeigen (`mockups/`), erst nach Zustimmung einbauen.
-- **Hintergrund (Menü am Zahnrad → „Hintergrund“):** `phase` (Tageszeit), `daily` oder eine Datei, gespeichert als
+- **Hintergrund (Menü am Zahnrad → „Hintergrund“):** `phase` (Tageszeit) oder ein Dateiname, gespeichert als
   Einstellung `background`. Bilder liegen nur auf dem TV unter
-  `/sdcard/Android/data/com.ansub.tvhome/files/hintergruende/{wechsel,fest}` (aufspielen: `tvctl.sh backgrounds`,
-  setzt auch Leserechte – von adb angelegte Ordner kann die App sonst nicht lesen). **Fotos nie ins Repo** (Lizenz).
-  `wechsel/` = täglicher Wechsel um 4 Uhr (Zufall, nie wie gestern), `fest/` nur auswählbar.
+  `/sdcard/Android/data/com.ansub.tvhome/files/hintergruende/` (aufspielen: `tvctl.sh backgrounds`, ersetzt alle
+  und setzt Leserechte – von adb angelegte Ordner kann die App sonst nicht lesen). **Fotos nie ins Repo** (Lizenz).
+  Den täglichen Wechsel gab es bis 11/2026 (Ordner `wechsel/`, `fest/`); alte Einstellungen werden umgestellt.
   Schalter „Fotos nachts dunkler“ (Einstellung `nightDim`, anfangs aus): 22–6 Uhr eine dunkle Schicht (~45 %)
   auf Fotos, ein-/ausgeblendet zur vollen Stunde; `TEST_PHASE 3` gilt dabei als Nacht, `1` als Tag. Die App legt
   bildschirmgroße Kopien im Cache an (Vorschau ~70 ms statt ~0,9 s aus 4K); Log: `background ready, … in N ms`.

@@ -16,7 +16,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
@@ -515,15 +514,12 @@ public class MainActivity extends Activity {
     }
 
     // ---- Background pictures ----
-    // Chosen in the menu on the settings icon (hold OK): the time of day, a different picture every day,
-    // or one fixed picture. Pictures are not part of the app (photos have their own licences); they are
-    // copied onto the TV with  tvctl.sh backgrounds <IP> <folder>  into this app's own folder:
-    //   .../Android/data/com.ansub.tvhome/files/hintergruende/wechsel/  in the daily change, and can be picked
-    //   .../Android/data/com.ansub.tvhome/files/hintergruende/fest/     can only be picked
+    // Chosen in the menu on the settings icon (hold OK): the time of day or one picture. Pictures are not
+    // part of the app (photos have their own licences); they are copied onto the TV with
+    //   tvctl.sh backgrounds <IP> <folder>   into   .../Android/data/com.ansub.tvhome/files/hintergruende/
     // Shown in name order; a leading number ("01 Eibsee.jpg") only sets the order. Best at 3840x2160.
-    private static final String BG = "background"; // "phase", "daily" or a file like "wechsel/01 Eibsee.jpg"
-    private static final String DAILY_SET = "wechsel", FIXED_SET = "fest";
-    private static final int DAY_STARTS_AT = 4, PREVIEW_MS = 250;
+    private static final String BG = "background"; // "phase" or a file like "01 Eibsee.jpg"
+    private static final int PREVIEW_MS = 250;
     private String shownBg;
     private int bgGen;
     private Drawable shownDrawable;
@@ -552,34 +548,44 @@ public class MainActivity extends Activity {
         return h >= NIGHT_FROM || h < NIGHT_TO;
     }
 
-    private String bgChoice() { return getSharedPreferences(PREFS, 0).getString(BG, "phase"); }
+    // Until November 2026 pictures sat in the folders wechsel/ and fest/, and there was a daily change: a
+    // picture chosen then is found again by its name, the daily change becomes the time of day.
+    private String bgChoice() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, 0);
+        String c = prefs.getString(BG, "phase");
+        if (c.contains("/") || "daily".equals(c)) {
+            String found = "phase";
+            if (c.contains("/")) for (String p : pictures()) if (pictureName(p).equals(pictureName(c))) found = p;
+            prefs.edit().putString(BG, found).remove("dailyDay").remove("dailyPicture").apply();
+            c = found;
+        }
+        return c;
+    }
 
     // What the background should be right now, as for showBackground. A missing picture falls back to the time of day.
     private String backgroundKey() { return resolveBg(bgChoice()); }
 
     private String resolveBg(String choice) {
-        String pic = null;
-        if ("daily".equals(choice)) pic = dailyPicture();
-        else if (!"phase".equals(choice) && new File(bgDir(), choice).isFile()) pic = choice;
+        String pic = !"phase".equals(choice) && new File(bgDir(), choice).isFile() ? choice : null;
         if (pic == null) return "phase:" + phaseNow();
         return nightDim() && isNight() ? pic + DIM_MARK : pic;
     }
 
-    // Pictures in one set, as "set/file", in name order.
-    private List<String> pictures(String set) {
+    // The pictures on the TV, as file names, in name order.
+    private List<String> pictures() {
         List<String> out = new ArrayList<>();
-        File[] files = new File(bgDir(), set).listFiles();
+        File[] files = bgDir().listFiles();
         if (files == null) return out;
         for (File f : files) {
             String n = f.getName().toLowerCase(java.util.Locale.ROOT);
             if (f.isFile() && !n.startsWith(".") && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")))
-                out.add(set + "/" + f.getName());
+                out.add(f.getName());
         }
         Collections.sort(out);
         return out;
     }
 
-    // "wechsel/01 Eibsee.jpg" -> "Eibsee"
+    // "01 Eibsee.jpg" -> "Eibsee" (also for an old "wechsel/01 Eibsee.jpg")
     private static String pictureName(String key) {
         String n = key.substring(key.lastIndexOf('/') + 1);
         int dot = n.lastIndexOf('.');
@@ -587,29 +593,10 @@ public class MainActivity extends Activity {
         return n.replaceFirst("^\\d+[\\s._-]*", "");
     }
 
-    // Today's picture of the daily change. A day starts at DAY_STARTS_AT in the morning; the new picture is
-    // drawn at random and is never yesterday's. Remembered, so it stays the same all day.
-    private String dailyPicture() {
-        List<String> pool = pictures(DAILY_SET);
-        if (pool.isEmpty()) return null;
-        java.util.Calendar c = java.util.Calendar.getInstance();
-        c.add(java.util.Calendar.HOUR_OF_DAY, -DAY_STARTS_AT);
-        String day = c.get(java.util.Calendar.YEAR) + "-" + c.get(java.util.Calendar.DAY_OF_YEAR);
-        SharedPreferences prefs = getSharedPreferences(PREFS, 0);
-        String last = prefs.getString("dailyPicture", null);
-        if (day.equals(prefs.getString("dailyDay", null)) && pool.contains(last)) return last;
-        List<String> choices = new ArrayList<>(pool);
-        if (choices.size() > 1) choices.remove(last);
-        String pick = choices.get(new java.util.Random().nextInt(choices.size()));
-        prefs.edit().putString("dailyDay", day).putString("dailyPicture", pick).apply();
-        return pick;
-    }
-
     // Shortly after start, quietly makes the screen-size copies and the small menu pictures of all
     // pictures, so the first time through the background menu is as quick as later ones.
     private void prepareBackgrounds() {
-        final List<String> all = pictures(DAILY_SET);
-        all.addAll(pictures(FIXED_SET));
+        final List<String> all = pictures();
         final int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
         thumbWorker.execute(() -> {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_LOWEST);
@@ -1798,13 +1785,11 @@ public class MainActivity extends Activity {
     }
 
     private String backgroundLabel(String choice) {
-        if ("phase".equals(choice) || !"daily".equals(choice) && !new File(bgDir(), choice).isFile()) return "Tageszeit";
-        return "daily".equals(choice) ? "Täglich wechselnd" : pictureName(choice);
+        return "phase".equals(choice) || !new File(bgDir(), choice).isFile() ? "Tageszeit" : pictureName(choice);
     }
 
     // The background menu, opened from "Hintergrund" in the menu on the settings icon: the time of day and
-    // the daily change side by side, then every picture as a tile, three to a row; it scrolls when they don't
-    // all fit. All four arrows move around. The background follows the focus at once as a preview; OK keeps
+    // every picture as tiles, three to a row; it scrolls when they don't all fit. All four arrows move around. The background follows the focus at once as a preview; OK keeps
     // it, Back puts the old one back. Either way it returns to the menu on the settings icon.
     private void showBackgroundMenu(final View anchor, final int backAt) {
         final Dialog d = new Dialog(this, android.R.style.Theme_Material_Dialog_NoActionBar);
@@ -1837,8 +1822,9 @@ public class MainActivity extends Activity {
 
         final String before = bgChoice();
         final boolean[] kept = {false};
-        final List<String> daily = pictures(DAILY_SET), all = new ArrayList<>(daily);
-        all.addAll(pictures(FIXED_SET));
+        final List<String> all = new ArrayList<>();
+        all.add("phase"); // the time of day comes first, as a tile like the pictures
+        all.addAll(pictures());
         final List<View> checks = new ArrayList<>();
         final List<String> checkKeys = new ArrayList<>();
         View[] focusFirst = {null};
@@ -1860,58 +1846,6 @@ public class MainActivity extends Activity {
             });
             if (focusFirst[0] == null || choice.equals(before)) focusFirst[0] = v;
         };
-
-        // Top row: time of day and the daily change, as two wide cards.
-        LinearLayout cards = new LinearLayout(this);
-        cards.setOrientation(LinearLayout.HORIZONTAL);
-        int cardW = (inner - 2 * px(8) - px(12)) / 2;
-        String today = dailyPicture();
-        String[] cardChoice = {"phase", "daily"};
-        for (int i = 0; i < 2; i++) {
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.HORIZONTAL);
-            card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setPadding(px(16), px(12), px(16), px(12));
-            card.setBackground(focusBackground(card, null));
-            ImageView pic = new ImageView(this);
-            pic.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            rounded(pic, px(8));
-            if (i == 0) pic.setImageDrawable(background(phaseNow()));
-            card.addView(pic, new LinearLayout.LayoutParams(px(112), px(63)));
-            LinearLayout words = new LinearLayout(this);
-            words.setOrientation(LinearLayout.VERTICAL);
-            TextView name = text(px(26), 0xE0FFFFFF, regular);
-            name.setText(i == 0 ? "Tageszeit" : "Täglich wechselnd");
-            name.setSingleLine(true);
-            words.addView(name);
-            TextView small = text(px(20), 0x8CFFFFFF, regular);
-            small.setSingleLine(true);
-            small.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            small.setText(i == 0 ? "Farbverlauf nach Uhrzeit" : today == null ? "keine Bilder" : "heute: " + pictureName(today));
-            words.addView(small);
-            LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(0, -2, 1f);
-            wl.leftMargin = px(16);
-            card.addView(words, wl);
-            TextView check = check();
-            card.addView(check);
-            checks.add(check);
-            checkKeys.add(cardChoice[i]);
-            if (i == 1 && daily.isEmpty()) {
-                card.setAlpha(0.4f);
-            } else {
-                wire.to(card, cardChoice[i]);
-            }
-            if (i == 1) loadMosaic(pic, daily);
-            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(cardW, -2);
-            if (i == 1) cl.leftMargin = px(12);
-            cards.addView(card, cl);
-        }
-        content.addView(cards);
-
-        TextView label = text(px(22), 0x80FFFFFF, regular);
-        label.setText(all.isEmpty() ? "Noch keine Bilder auf dem TV" : "Bilder");
-        label.setPadding(px(14), px(18), 0, px(10));
-        content.addView(label);
 
         // The pictures, three to a row.
         int gap = px(14), tileW = (inner - 2 * px(8) - 2 * gap) / 3, picH = Math.round((tileW - 2 * px(8)) * 9f / 16f);
@@ -1942,7 +1876,7 @@ public class MainActivity extends Activity {
             line.setGravity(Gravity.CENTER_VERTICAL);
             line.setPadding(px(4), px(8), 0, 0);
             TextView name = text(px(23), 0xCCFFFFFF, regular);
-            name.setText(pictureName(key));
+            name.setText("phase".equals(key) ? "Tageszeit" : pictureName(key));
             name.setSingleLine(true);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             line.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1953,7 +1887,8 @@ public class MainActivity extends Activity {
             tile.addView(line);
             tile.setBackground(focusBackground(tile, ring));
             wire.to(tile, key);
-            loadThumb(pic, key);
+            if ("phase".equals(key)) pic.setImageDrawable(background(phaseNow()));
+            else loadThumb(pic, key);
             LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(tileW, -2);
             if (i % 3 > 0) tl.leftMargin = gap;
             row.addView(tile, tl);
@@ -2068,45 +2003,6 @@ public class MainActivity extends Activity {
         thumbWorker.execute(() -> {
             final Bitmap b = thumbNow(key);
             if (b != null) runOnUiThread(() -> v.setImageBitmap(b));
-        });
-    }
-
-    // The daily change's card: four of its pictures in a square, with a shuffle sign in the middle.
-    private void loadMosaic(final ImageView v, final List<String> pool) {
-        if (pool.isEmpty()) return;
-        final int w = px(224), h = px(126);
-        thumbWorker.execute(() -> {
-            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas c = new Canvas(out);
-            c.drawColor(0xFF231D1F);
-            int gap = Math.max(1, px(3)), cw = (w - gap) / 2, ch = (h - gap) / 2;
-            Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
-            for (int i = 0; i < 4; i++) {
-                Bitmap t = thumbNow(pool.get(i * pool.size() / 4 % pool.size()));
-                if (t == null) continue;
-                int x = (i % 2) * (cw + gap), y = (i / 2) * (ch + gap);
-                float k = Math.max((float) cw / t.getWidth(), (float) ch / t.getHeight());
-                int sw = Math.round(cw / k), sh = Math.round(ch / k);
-                int sx = (t.getWidth() - sw) / 2, sy = (t.getHeight() - sh) / 2;
-                c.drawBitmap(t, new android.graphics.Rect(sx, sy, sx + sw, sy + sh), new android.graphics.Rect(x, y, x + cw, y + ch), p);
-            }
-            float r = h * 0.3f, cx = w / 2f, cy = h / 2f;
-            Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
-            dot.setColor(0x8C000000);
-            c.drawCircle(cx, cy, r, dot);
-            // The shuffle sign, drawn on a 24 x 24 grid.
-            Path s = new Path();
-            float u = r * 1.25f / 24f, ox = cx - 12 * u, oy = cy - 12 * u;
-            float[][] lines = {{16, 3, 21, 3}, {21, 3, 21, 8}, {4, 20, 21, 3}, {21, 16, 21, 21}, {21, 21, 16, 21}, {15, 15, 21, 21}, {4, 4, 9, 9}};
-            for (float[] l : lines) { s.moveTo(ox + l[0] * u, oy + l[1] * u); s.lineTo(ox + l[2] * u, oy + l[3] * u); }
-            Paint pen = new Paint(Paint.ANTI_ALIAS_FLAG);
-            pen.setStyle(Paint.Style.STROKE);
-            pen.setStrokeWidth(2.2f * u);
-            pen.setStrokeCap(Paint.Cap.ROUND);
-            pen.setStrokeJoin(Paint.Join.ROUND);
-            pen.setColor(Color.WHITE);
-            c.drawPath(s, pen);
-            runOnUiThread(() -> v.setImageBitmap(out));
         });
     }
 

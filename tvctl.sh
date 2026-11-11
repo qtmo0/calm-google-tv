@@ -26,8 +26,8 @@
 #                                         in der Leiste, Umschalten per OK. Der LG fragt einmal "Zulassen?".
 #                                         Bei mehreren LGs im Netz die IP des richtigen LG mitgeben.
 #   backgrounds <IP> <ordner>             Hintergrundbilder für den Startbildschirm aufspielen (ersetzt die alten).
-#                                         Im Ordner: wechsel/ (im täglichen Wechsel) und fest/ (nur zum Auswählen),
 #                                         Bilder am besten 3840x2160 JPG, "01 Name.jpg" (Nummer = Reihenfolge)
+#
 #   reboot      <IP>                      30 s warten, neu starten, Start prüfen
 #   undo        <IP>                      alles laut Sicherung zurück
 set -e
@@ -234,22 +234,19 @@ lg-pair)
 
 backgrounds)
   SRC="$1"
-  [ -d "$SRC/wechsel" ] || [ -d "$SRC/fest" ] || { echo "Im Ordner fehlen wechsel/ und fest/: $SRC" >&2; exit 1; }
+  [ -d "$SRC" ] || { echo "Ordner fehlt: $SRC" >&2; exit 1; }
   tv pm list packages com.ansub.tvhome | grep -q com.ansub.tvhome || { echo "Erst den Startbildschirm installieren (home)." >&2; exit 1; }
   BG=/sdcard/Android/data/com.ansub.tvhome/files/hintergruende
   tv rm -rf "$BG"
   tv mkdir -p "$BG"
-  for set in wechsel fest; do
-    [ -d "$SRC/$set" ] || continue
-    tv mkdir -p "$BG/$set"
-    for f in "$SRC/$set"/*; do
-      case "$f" in *.jpg|*.jpeg|*.png|*.webp|*.JPG|*.JPEG|*.PNG) adb -s "$TV" push "$f" "$BG/$set/" >/dev/null ;; esac
-    done
+  n=0
+  for f in "$SRC"/*; do
+    case "$f" in *.jpg|*.jpeg|*.png|*.webp|*.JPG|*.JPEG|*.PNG) adb -s "$TV" push "$f" "$BG/" >/dev/null; n=$((n + 1)) ;; esac
   done
   # adb legt Ordner nur für sich selbst lesbar an; der Startbildschirm muss sie lesen können.
   tv chmod -R a+rX "$BG"
-  echo "Auf dem TV:"; tv ls -R "$BG"
-  log "Hintergrundbilder aufgespielt (wechsel: $(ls "$SRC/wechsel" 2>/dev/null | wc -l | tr -d ' '), fest: $(ls "$SRC/fest" 2>/dev/null | wc -l | tr -d ' '))" "adb shell rm -rf $BG"
+  echo "Auf dem TV:"; tv ls "$BG"
+  log "Hintergrundbilder aufgespielt ($n Bilder)" "adb shell rm -rf $BG"
   ;;
 
 reboot)
