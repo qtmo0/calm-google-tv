@@ -90,6 +90,8 @@ nicht löschen, `undo` braucht es.
   Tastendrücke mitschneiden: `adb shell 'timeout 40 getevent -lt'` (macOS hat kein `timeout`).
 - **Kein Root:** `cmd dreams` geht nicht; Bildschirmschoner nur über die Wartezeit auslösen.
 - **zsh:** `S="adb -s …"; $S shell` funktioniert nicht – Funktionen nutzen.
+- **Netzlaufwerke** (z. B. Mountain Duck): `mv`/`cp` können still leere oder fehlende Dateien hinterlassen. Bilder
+  lokal vorbereiten und danach Größen prüfen; `tvctl.sh backgrounds` bricht bei leeren Dateien ab.
 - **Bildschirmfotos** (`adb exec-out screencap -p > x.png`) sind immer 1080p, auch wenn der Schoner in 4K rendert.
 
 ## Code ändern

@@ -235,6 +235,8 @@ lg-pair)
 backgrounds)
   SRC="$1"
   [ -d "$SRC" ] || { echo "Ordner fehlt: $SRC" >&2; exit 1; }
+  # Leere Dateien (z. B. nach einem abgebrochenen Kopieren auf ein Netzlaufwerk) nie aufspielen – sonst fehlen Bilder.
+  for f in "$SRC"/*; do [ -f "$f" ] && [ ! -s "$f" ] && { echo "Leere Datei, abgebrochen: $f" >&2; exit 1; }; done
   tv pm list packages com.ansub.tvhome | grep -q com.ansub.tvhome || { echo "Erst den Startbildschirm installieren (home)." >&2; exit 1; }
   BG=/sdcard/Android/data/com.ansub.tvhome/files/hintergruende
   tv rm -rf "$BG"
